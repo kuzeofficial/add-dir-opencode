@@ -3,7 +3,7 @@ import type { Plugin } from '@opencode-ai/plugin';
 import type { Permission } from '@opencode-ai/sdk';
 import fs from 'fs';
 import path from 'path';
-import { resolveDirectoryPath, validateDirectory, countFiles, isPathInDirectory } from './utils.js';
+import { validateDirectory, countFiles } from './utils.js';
 
 const SESSIONS_FILE = path.join(__dirname, '.sessions.json');
 const MAX_SESSIONS = 50;
@@ -50,7 +50,7 @@ function getSessionDirs(sessionId: string): string[] {
 
 function addSessionDir(sessionId: string, dirPath: string): void {
   const sessions = readSessions();
-  const normalized = resolveDirectoryPath(dirPath);
+  const normalized = path.resolve(dirPath);
 
   if (!sessions[sessionId]) {
     sessions[sessionId] = { dirs: [], lastAccessed: Date.now() };
@@ -116,7 +116,7 @@ const addDirPlugin: Plugin = async () => {
         },
         execute: async ({ directory }, context) => {
           const sessionId = context.sessionID;
-          const resolvedPath = resolveDirectoryPath(directory);
+          const resolvedPath = path.resolve(directory);
           validateDirectory(resolvedPath);
           addSessionDir(sessionId, resolvedPath);
           const fileCount = countFiles(resolvedPath);

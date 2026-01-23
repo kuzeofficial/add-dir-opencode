@@ -53,10 +53,6 @@ export function countFiles(directory: string): number {
   return fileCount;
 }
 
-export function resolveDirectoryPath(dirPath: string): string {
-  return path.resolve(dirPath);
-}
-
 export function validateDirectory(dirPath: string): void {
   if (!fs.existsSync(dirPath)) {
     throw new Error(`Directory does not exist: ${dirPath}`);
@@ -73,11 +69,4 @@ export function validateDirectory(dirPath: string): void {
   } catch (error) {
     throw new Error(`Permission denied: Cannot read directory ${dirPath}`);
   }
-}
-
-export function isPathInDirectory(testPath: string, dirPath: string): boolean {
-  const normalizedTestPath = path.resolve(testPath);
-  const normalizedDirPath = path.resolve(dirPath);
-  const relative = path.relative(normalizedDirPath, normalizedTestPath);
-  return !relative.startsWith('..') && !path.isAbsolute(relative);
 }
