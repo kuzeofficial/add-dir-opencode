@@ -4,23 +4,27 @@ Add external directories to your OpenCode session context with automatic permiss
 
 ## Quick Start
 
-Install and use in one command:
+1. Install the plugin:
 
 ```bash
-npm install -g opencode-add-dir
+cd ~/.config/opencode
+npm install opencode-add-dir
 ```
 
-Then add to your `~/.config/opencode/opencode.jsonc`:
+2. Add `"opencode-add-dir"` to your `~/.config/opencode/opencode.jsonc` plugins array:
 
 ```jsonc
 {
   "plugin": [
+    "your-other-plugins",
     "opencode-add-dir"
   ]
 }
 ```
 
-That's it! The plugin is ready to use. Restart OpenCode and run:
+3. Restart OpenCode
+
+4. Use the command:
 
 ```bash
 /add-dir /path/to/your/project
@@ -75,18 +79,23 @@ Images, PDFs, Office docs, archives, media files, executables, compiled files, e
 
 ## Installation Details
 
-### Automatic Setup
 The plugin's postinstall script automatically:
-1. Finds your OpenCode config directory
+1. Finds your OpenCode config directory (`~/.config/opencode/`)
 2. Creates the `/add-dir` command file
 3. Installs it to `~/.config/opencode/command/add-dir.md`
 
-### Manual Installation (If Auto-Setup Fails)
+### Troubleshooting
 
-If the command file doesn't appear automatically:
+If the `/add-dir` command doesn't work after installation:
 
+1. Verify the command file exists:
 ```bash
-# Create the command file manually
+ls -la ~/.config/opencode/command/add-dir.md
+```
+
+2. If missing, create it manually:
+```bash
+mkdir -p ~/.config/opencode/command
 cat > ~/.config/opencode/command/add-dir.md << 'EOF'
 ---
 description: Add an external directory to the session context
@@ -98,21 +107,27 @@ EOF
 
 ## Development
 
+For contributors and maintainers:
+
 ```bash
-# Clone the plugin
-git clone <repo-url>
+# Clone the repository
+git clone https://github.com/kuzeofficial/add-dir-opencode.git
 cd opencode-add-dir
 
 # Install dependencies
 bun install
 
-# Build
+# Build the TypeScript source
 bun run build
 
 # Test locally
 npm link
 cd ~/.config/opencode
 npm link opencode-add-dir
+
+# Publish new version
+npm version patch  # or minor/major
+npm publish
 ```
 
 ## Files
