@@ -1,50 +1,57 @@
 # GitHub Actions Setup
 
-This repository uses GitHub Actions with **npm Trusted Publisher** to automatically publish the package when you push to the main branch.
+This repository uses GitHub Actions with **npm Trusted Publisher** to automatically publish the package when the version changes.
 
 ## Automated Release Process
 
-The workflow triggers automatically when you push to `main` branch and:
+The workflow triggers on push to `main` branch:
 
-1. ✅ Checks if a tag for the current version exists
-2. ✅ Creates a new git tag (if it doesn't exist)
-3. ✅ Builds the package
-4. ✅ Publishes to npm using Trusted Publisher
-5. ✅ Creates a GitHub release with formatted notes
+1. ✅ Checks if `package.json` version changed
+2. ✅ If version changed: builds and publishes to npm
+3. ✅ If version unchanged: skips workflow entirely
 
 No manual intervention needed!
 
-## How to Publish a New Version (Fully Automated)
+## How to Publish a New Version
 
-Just run these commands:
+Just update the version:
 
 ```bash
-# Update version in package.json manually or use npm version
-npm version patch  # or minor, major
+# Bump version
+npm version patch  # or minor, or major
 
 # Push to main branch
 git push origin main
 ```
 
-That's it! The GitHub Actions workflow will:
+That's it! The workflow will:
 - Detect version bump
-- Create tag automatically
 - Build and publish to npm
-- Automatically create a GitHub release
+
+If you push without changing the version, the workflow detects it and skips automatically.
 
 ## Example Workflow
 
 ```bash
-# Bump version (creates a commit but NOT a tag)
+# Bump version (creates a commit)
 npm version patch
 
 # Push to main
 git push origin main
 
-# GitHub Actions automatically:
-# - Creates tag v1.x.x
+# GitHub Actions:
+# - Detects package.json changed
+# - Builds package
 # - Publishes to npm
-# - Creates GitHub release
+```
+
+```bash
+# Push without version bump
+git push origin main
+
+# GitHub Actions:
+# - Detects package.json unchanged
+# - Skips workflow (does nothing)
 ```
 
 ## Trusted Publisher Setup (One-Time Setup)
@@ -67,16 +74,25 @@ This repository uses npm's Trusted Publisher feature, which eliminates the need 
 
 The workflow uses these permissions (configured in `.github/workflows/publish.yml`):
 - `id-token: write` - Required for OIDC token
-- `contents: write` - Required to create GitHub releases and tags
+- `contents: write` - Required for checkout
 
 These are already set in the workflow file - no additional configuration needed.
 
-## Workflow Triggers
+## Workflow Logic
 
-The workflow is triggered automatically when you push to the `main` branch:
-- Checks if a tag for the current version already exists
-- Only publishes if the tag doesn't exist (prevents duplicate publishing)
-- Uses the version from `package.json`
+The workflow has two jobs:
+
+1. **check-and-publish**: Checks if package.json changed
+   - Compares current commit with previous commit
+   - Checks if package.json is in changed files
+   - Outputs `should_publish` and `version`
+   - Skips publish job if version unchanged
+
+2. **publish**: Publishes to npm (only if version changed)
+   - Runs only if `should_publish == true`
+   - Installs dependencies
+   - Builds package
+   - Publishes using Trusted Publisher
 
 ## How Trusted Publisher Works
 
@@ -88,24 +104,22 @@ The workflow is triggered automatically when you push to the `main` branch:
 
 ## Manual Publishing (Fallback)
 
-If the automated workflow fails, you can publish manually:
+If automated workflow fails, you can publish manually:
 
 ```bash
 # Build
 npm run build
 
 # Publish
-npm publish --provenance --access public
+npm publish --access public
 ```
-
-Then create a GitHub release manually on the website.
 
 ## Troubleshooting
 
 ### Workflow runs but doesn't publish
-- Check if the tag already exists: `git tag | grep v`
-- Delete the existing tag if needed: `git tag -d v1.x.x && git push origin :refs/tags/v1.x.x`
-- Check workflow logs to see if "Tag already exists, skipping" message appears
+- Check if package.json actually changed in the commit
+- The workflow skips automatically if version unchanged
+- Check workflow logs at: Actions → Publish Package
 
 ### Workflow fails with "No publisher configured"
 - Verify Trusted Publisher is configured at https://www.npmjs.com/package/opencode-add-dir/access
@@ -116,7 +130,7 @@ Then create a GitHub release manually on the website.
 - Check that the workflow has `id-token: write` permission
 - This is already configured in the workflow file
 
-### Package not published but release is created
+### Package not published
 - Check the workflow run logs at: Actions → Publish Package
-- Look for the "Publish to npm" step
+- Look for the "Check if package.json version changed" step
 - Verify the Trusted Publisher configuration
