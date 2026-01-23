@@ -4,52 +4,17 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
-    inputs:
-      branch:
-        description: 'Branch to publish from'
-        required: true
-        default: 'main'
-        type: string
 
 permissions:
   contents: write
   id-token: write
 
 jobs:
-  check-and-publish:
-    runs-on: ubuntu-latest
-    outputs:
-      should_publish: ${{ steps.check_version.outputs.changed }}
-      version: ${{ steps.check_version.outputs.version }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.inputs.branch || github.ref }}
-          fetch-depth: 2
-
-      - name: Check if package.json version changed
-        id: check_version
-        run: |
-          if git diff HEAD^ HEAD --name-only | grep -q "package.json"; then
-            echo "changed=true" >> $GITHUB_OUTPUT
-            echo "version=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
-            echo "Package version changed, will publish"
-          else
-            echo "changed=false" >> $GITHUB_OUTPUT
-            echo "version=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
-            echo "Package version not changed, skipping publish"
-          fi
-
   publish:
-    needs: check-and-publish
-    if: needs.check-and-publish.outputs.should_publish == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.inputs.branch || github.ref }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
