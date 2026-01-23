@@ -161,19 +161,7 @@ function isFileSizeValid(filePath: string): boolean {
   return stats.size <= MAX_FILE_SIZE_BYTES;
 }
 
-function shouldProcessDirectory(entry: fs.Dirent): boolean {
-  return entry.isDirectory() && !shouldIgnoreDirectory(entry.name);
-}
 
-function shouldProcessFile(entry: fs.Dirent, filePath: string): boolean {
-  if (!entry.isFile()) {
-    return false;
-  }
-  if (isBinaryFile(entry.name)) {
-    return false;
-  }
-  return isFileSizeValid(filePath);
-}
 
 function processDirectory(
   entry: fs.Dirent,
@@ -201,16 +189,15 @@ function processDirectory(
 }
 
 function processFile(
-  entry: fs.Dirent,
-  dirPath: string,
+  fullPath: string,
   baseDir: string,
   depth: number,
   result: ScanResult
 ): void {
-  const fullPath = path.join(dirPath, entry.name);
   const relativePath = path.relative(baseDir, fullPath);
+  const fileName = path.basename(fullPath);
 
-  result.tree.push(createTreeEntry(entry.name, false, depth));
+  result.tree.push(createTreeEntry(fileName, false, depth));
 
   const stats = fs.statSync(fullPath);
   const contentResult = readFileContent(fullPath, MAX_FILE_SIZE_BYTES);
@@ -223,6 +210,46 @@ function processFile(
   });
 
   result.fileCount++;
+}
+
+function processEntry(
+  entry: fs.Dirent,
+  dirPath: string,
+  baseDir: string,
+  depth: number,
+  result: ScanResult
+): void {
+  if (result.fileCount >= MAX_FILES) {
+    return;
+  }
+
+  if (entry.isDirectory()) {
+    if (shouldIgnoreDirectory(entry.name)) {
+      result.skipped++;
+      return;
+    }
+    processDirectory(entry, dirPath, baseDir, depth, result);
+    return;
+  }
+
+  if (!entry.isFile()) {
+    result.skipped++;
+    return;
+  }
+
+  if (isBinaryFile(entry.name)) {
+    result.skipped++;
+    return;
+  }
+
+  const fullPath = path.join(dirPath, entry.name);
+
+  if (!isFileSizeValid(fullPath)) {
+    result.skipped++;
+    return;
+  }
+
+  processFile(fullPath, baseDir, depth, result);
 }
 
 function scanDirectory(
@@ -244,19 +271,7 @@ function scanDirectory(
   const sortedEntries = sortDirectoryEntries(entries);
 
   for (const entry of sortedEntries) {
-    if (result.fileCount >= MAX_FILES) {
-      break;
-    }
-
-    const fullPath = path.join(dirPath, entry.name);
-
-    if (shouldProcessDirectory(entry)) {
-      processDirectory(entry, dirPath, baseDir, depth, result);
-    } else if (entry.isFile() && !isBinaryFile(entry.name) && isFileSizeValid(fullPath)) {
-      processFile(entry, dirPath, baseDir, depth, result);
-    } else {
-      result.skipped++;
-    }
+    processEntry(entry, dirPath, baseDir, depth, result);
   }
 
   return result;
