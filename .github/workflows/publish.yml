@@ -4,6 +4,10 @@ on:
   release:
     types: [published]
 
+permissions:
+  contents: read
+  id-token: write
+
 jobs:
   publish-npm:
     runs-on: ubuntu-latest
@@ -24,9 +28,9 @@ jobs:
         run: npm run build
 
       - name: Publish to npm
-        run: npm publish --provenance
+        run: npm publish --provenance --access public
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   create-github-release:
     needs: publish-npm
@@ -60,7 +64,7 @@ jobs:
             ]
           }
           \`\`\`
-          
+
           Then restart OpenCode and run:
           \`\`\`bash
           /add-dir /path/to/your/project

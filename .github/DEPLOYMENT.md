@@ -1,6 +1,30 @@
 # GitHub Actions Setup
 
-This repository uses GitHub Actions to automatically publish the package to npm when a release is created.
+This repository uses GitHub Actions with **npm Trusted Publisher** to automatically publish the package when a release is created.
+
+## Trusted Publisher Setup (One-Time Setup)
+
+This repository uses npm's Trusted Publisher feature, which eliminates the need for an NPM_TOKEN secret.
+
+### Step 1: Configure npm Trusted Publisher
+
+1. Go to https://www.npmjs.com/package/opencode-add-dir/access
+2. Click "Add a publisher"
+3. Configure the publisher with these settings:
+   - **GitHub Organization**: `kuzeofficial`
+   - **Repository Name**: `add-dir-opencode`
+   - **Workflow Name**: `.github/workflows/publish.yml`
+   - **Environment Name**: leave empty (or specify if needed)
+
+4. Click "Add publisher"
+
+### Step 2: Verify Workflow Permissions
+
+The workflow uses these permissions (configured in `.github/workflows/publish.yml`):
+- `id-token: write` - Required for OIDC token
+- `contents: read` - Required for checkout
+
+These are already set in the workflow file - no additional configuration needed.
 
 ## How to Publish a New Version
 
@@ -18,17 +42,16 @@ This repository uses GitHub Actions to automatically publish the package to npm 
 
 4. The workflow will automatically:
    - Build the package
-   - Publish to npm
+   - Publish to npm using Trusted Publisher (OIDC)
    - Create a GitHub release with notes
 
-## Required Secrets
+## How Trusted Publisher Works
 
-Add these secrets in your repository settings (Settings → Secrets and variables → Actions):
-
-- `NPM_TOKEN`: Your npm automation token
-  - Create at https://www.npmjs.com/settings/<username>/tokens
-  - Select "Automation" as the token type
-  - Copy the token and add it as a repository secret
+- No NPM_TOKEN secret needed
+- GitHub Actions provides an OIDC token
+- npm validates the token against your Trusted Publisher configuration
+- The workflow can only publish from the configured repository
+- Much more secure than using tokens
 
 ## Triggering the Workflow
 
@@ -43,5 +66,22 @@ If you prefer to publish manually:
 npm run build
 
 # Publish
-npm publish --otp=<your-otp-code>
+npm publish --provenance --access public
 ```
+
+## Troubleshooting
+
+### Workflow fails with "No publisher configured"
+- Verify Trusted Publisher is configured at https://www.npmjs.com/package/opencode-add-dir/access
+- Check that the repository name matches exactly
+- Ensure the workflow name is correct: `.github/workflows/publish.yml`
+
+### Workflow fails with "Missing id-token permission"
+- Check that the workflow has `id-token: write` permission
+- This is already configured in the workflow file
+
+### Package not published but release is created
+- Check the workflow run logs at: Actions → Publish Package
+- Look for the "Publish to npm" step
+- Verify the Trusted Publisher configuration
+
