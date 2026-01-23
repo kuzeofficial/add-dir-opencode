@@ -57,7 +57,11 @@ jobs:
 
       - name: Publish to npm
         if: steps.check_tag.outputs.exists == 'false'
-        run: npm publish --provenance --access public
+        env:
+          NPM_CONFIG_PROVENANCE: false
+        run: |
+          rm -f ~/.npmrc
+          npm publish --access public
 
   create-github-release:
     needs: publish-npm
