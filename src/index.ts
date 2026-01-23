@@ -161,36 +161,68 @@ function isFileSizeValid(filePath: string): boolean {
   return stats.size <= MAX_FILE_SIZE_BYTES;
 }
 
-function shouldProcessDirectory(entry: fs.Dirent, result: ScanResult): boolean {
-  if (result.fileCount >= MAX_FILES) {
-    return false;
-  }
-  if (!entry.isDirectory()) {
-    return false;
-  }
-  if (shouldIgnoreDirectory(entry.name)) {
-    result.skipped++;
-    return false;
-  }
-  return true;
+function shouldProcessDirectory(entry: fs.Dirent): boolean {
+  return entry.isDirectory() && !shouldIgnoreDirectory(entry.name);
 }
 
-function shouldProcessFile(entry: fs.Dirent, filePath: string, result: ScanResult): boolean {
-  if (result.fileCount >= MAX_FILES) {
-    return false;
-  }
+function shouldProcessFile(entry: fs.Dirent, filePath: string): boolean {
   if (!entry.isFile()) {
     return false;
   }
   if (isBinaryFile(entry.name)) {
-    result.skipped++;
     return false;
   }
-  if (!isFileSizeValid(filePath)) {
-    result.skipped++;
-    return false;
-  }
-  return true;
+  return isFileSizeValid(filePath);
+}
+
+function processDirectory(
+  entry: fs.Dirent,
+  dirPath: string,
+  baseDir: string,
+  depth: number,
+  result: ScanResult
+): void {
+  const fullPath = path.join(dirPath, entry.name);
+  result.tree.push(createTreeEntry(entry.name, true, depth));
+
+  const nestedResult = scanDirectory(
+    fullPath,
+    baseDir,
+    result.files,
+    result.tree,
+    depth + 1,
+    result.fileCount
+  );
+
+  result.files = nestedResult.files;
+  result.tree = nestedResult.tree;
+  result.fileCount = nestedResult.fileCount;
+  result.skipped += nestedResult.skipped;
+}
+
+function processFile(
+  entry: fs.Dirent,
+  dirPath: string,
+  baseDir: string,
+  depth: number,
+  result: ScanResult
+): void {
+  const fullPath = path.join(dirPath, entry.name);
+  const relativePath = path.relative(baseDir, fullPath);
+
+  result.tree.push(createTreeEntry(entry.name, false, depth));
+
+  const stats = fs.statSync(fullPath);
+  const contentResult = readFileContent(fullPath, MAX_FILE_SIZE_BYTES);
+
+  result.files.push({
+    path: relativePath,
+    size: stats.size,
+    content: contentResult.content,
+    isTruncated: contentResult.isTruncated
+  });
+
+  result.fileCount++;
 }
 
 function scanDirectory(
@@ -208,10 +240,6 @@ function scanDirectory(
     skipped: 0
   };
 
-  if (result.fileCount >= MAX_FILES) {
-    return result;
-  }
-
   const entries = fs.readdirSync(dirPath, { withFileTypes: true });
   const sortedEntries = sortDirectoryEntries(entries);
 
@@ -221,38 +249,13 @@ function scanDirectory(
     }
 
     const fullPath = path.join(dirPath, entry.name);
-    const relativePath = path.relative(baseDir, fullPath);
 
-    if (shouldProcessDirectory(entry, result)) {
-      result.tree.push(createTreeEntry(entry.name, true, depth));
-
-      const nestedResult = scanDirectory(
-        fullPath,
-        baseDir,
-        result.files,
-        result.tree,
-        depth + 1,
-        result.fileCount
-      );
-
-      result.files = nestedResult.files;
-      result.tree = nestedResult.tree;
-      result.fileCount = nestedResult.fileCount;
-      result.skipped += nestedResult.skipped;
-    } else if (shouldProcessFile(entry, fullPath, result)) {
-      result.tree.push(createTreeEntry(entry.name, false, depth));
-
-      const stats = fs.statSync(fullPath);
-      const contentResult = readFileContent(fullPath, MAX_FILE_SIZE_BYTES);
-
-      result.files.push({
-        path: relativePath,
-        size: stats.size,
-        content: contentResult.content,
-        isTruncated: contentResult.isTruncated
-      });
-
-      result.fileCount++;
+    if (shouldProcessDirectory(entry)) {
+      processDirectory(entry, dirPath, baseDir, depth, result);
+    } else if (entry.isFile() && !isBinaryFile(entry.name) && isFileSizeValid(fullPath)) {
+      processFile(entry, dirPath, baseDir, depth, result);
+    } else {
+      result.skipped++;
     }
   }
 
