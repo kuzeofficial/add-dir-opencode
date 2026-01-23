@@ -1,14 +1,16 @@
 # GitHub Actions Setup
 
-This repository uses GitHub Actions with **npm Trusted Publisher** to automatically publish the package when a version tag is pushed.
+This repository uses GitHub Actions with **npm Trusted Publisher** to automatically publish the package when you push to the main branch.
 
 ## Automated Release Process
 
-The workflow triggers automatically when you push a version tag (e.g., `v1.0.3`) and:
+The workflow triggers automatically when you push to `main` branch and:
 
-1. ✅ Builds the package
-2. ✅ Publishes to npm using Trusted Publisher
-3. ✅ Creates a GitHub release with formatted notes
+1. ✅ Checks if a tag for the current version exists
+2. ✅ Creates a new git tag (if it doesn't exist)
+3. ✅ Builds the package
+4. ✅ Publishes to npm using Trusted Publisher
+5. ✅ Creates a GitHub release with formatted notes
 
 No manual intervention needed!
 
@@ -17,17 +19,33 @@ No manual intervention needed!
 Just run these commands:
 
 ```bash
-# Update version (this creates a git tag)
+# Update version in package.json manually or use npm version
 npm version patch  # or minor, major
 
-# Push the version and tag
-git push origin main --tags
+# Push to main branch
+git push origin main
 ```
 
 That's it! The GitHub Actions workflow will:
-- Detect the new tag
+- Detect version bump
+- Create tag automatically
 - Build and publish to npm
 - Automatically create a GitHub release
+
+## Example Workflow
+
+```bash
+# Bump version (creates a commit but NOT a tag)
+npm version patch
+
+# Push to main
+git push origin main
+
+# GitHub Actions automatically:
+# - Creates tag v1.x.x
+# - Publishes to npm
+# - Creates GitHub release
+```
 
 ## Trusted Publisher Setup (One-Time Setup)
 
@@ -49,28 +67,16 @@ This repository uses npm's Trusted Publisher feature, which eliminates the need 
 
 The workflow uses these permissions (configured in `.github/workflows/publish.yml`):
 - `id-token: write` - Required for OIDC token
-- `contents: read` - Required for checkout
+- `contents: write` - Required to create GitHub releases and tags
 
 These are already set in the workflow file - no additional configuration needed.
 
-## How to Publish a New Version
+## Workflow Triggers
 
-1. Update the version in `package.json`:
-   ```bash
-   npm version patch  # or minor, major
-   ```
-
-2. Push the version bump and tag:
-   ```bash
-   git push origin main --tags
-   ```
-
-3. Go to GitHub Releases page and create a new release from the tag
-
-4. The workflow will automatically:
-   - Build the package
-   - Publish to npm using Trusted Publisher (OIDC)
-   - Create a GitHub release with notes
+The workflow is triggered automatically when you push to the `main` branch:
+- Checks if a tag for the current version already exists
+- Only publishes if the tag doesn't exist (prevents duplicate publishing)
+- Uses the version from `package.json`
 
 ## How Trusted Publisher Works
 
@@ -94,8 +100,12 @@ npm publish --provenance --access public
 
 Then create a GitHub release manually on the website.
 
-
 ## Troubleshooting
+
+### Workflow runs but doesn't publish
+- Check if the tag already exists: `git tag | grep v`
+- Delete the existing tag if needed: `git tag -d v1.x.x && git push origin :refs/tags/v1.x.x`
+- Check workflow logs to see if "Tag already exists, skipping" message appears
 
 ### Workflow fails with "No publisher configured"
 - Verify Trusted Publisher is configured at https://www.npmjs.com/package/opencode-add-dir/access
@@ -110,4 +120,3 @@ Then create a GitHub release manually on the website.
 - Check the workflow run logs at: Actions → Publish Package
 - Look for the "Publish to npm" step
 - Verify the Trusted Publisher configuration
-
