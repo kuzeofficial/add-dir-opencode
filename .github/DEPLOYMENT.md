@@ -1,6 +1,33 @@
 # GitHub Actions Setup
 
-This repository uses GitHub Actions with **npm Trusted Publisher** to automatically publish the package when a release is created.
+This repository uses GitHub Actions with **npm Trusted Publisher** to automatically publish the package when a version tag is pushed.
+
+## Automated Release Process
+
+The workflow triggers automatically when you push a version tag (e.g., `v1.0.3`) and:
+
+1. ✅ Builds the package
+2. ✅ Publishes to npm using Trusted Publisher
+3. ✅ Creates a GitHub release with formatted notes
+
+No manual intervention needed!
+
+## How to Publish a New Version (Fully Automated)
+
+Just run these commands:
+
+```bash
+# Update version (this creates a git tag)
+npm version patch  # or minor, major
+
+# Push the version and tag
+git push origin main --tags
+```
+
+That's it! The GitHub Actions workflow will:
+- Detect the new tag
+- Build and publish to npm
+- Automatically create a GitHub release
 
 ## Trusted Publisher Setup (One-Time Setup)
 
@@ -53,13 +80,9 @@ These are already set in the workflow file - no additional configuration needed.
 - The workflow can only publish from the configured repository
 - Much more secure than using tokens
 
-## Triggering the Workflow
+## Manual Publishing (Fallback)
 
-The workflow is triggered when a release is **published** (not just created as a draft).
-
-## Manual Publishing
-
-If you prefer to publish manually:
+If the automated workflow fails, you can publish manually:
 
 ```bash
 # Build
@@ -68,6 +91,9 @@ npm run build
 # Publish
 npm publish --provenance --access public
 ```
+
+Then create a GitHub release manually on the website.
+
 
 ## Troubleshooting
 
