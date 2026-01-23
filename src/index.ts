@@ -8,6 +8,8 @@ import { validateDirectory, countFiles } from './utils.js';
 const SESSIONS_FILE = path.join(__dirname, '.sessions.json');
 const MAX_SESSIONS = 50;
 const SESSION_AGE_DAYS = 30;
+const CLEANUP_INTERVAL_MS = 3600000;
+const LAST_ACCESS_UPDATE_MS = 3600000;
 
 interface SessionData {
   dirs: string[];
@@ -18,7 +20,7 @@ interface Sessions {
   [sessionId: string]: SessionData;
 }
 
-const cleanedSessions = new Set<string>();
+let lastCleaned = 0;
 
 function readSessions(): Sessions {
   try {
@@ -40,8 +42,11 @@ function getSessionDirs(sessionId: string): string[] {
   const session = sessions[sessionId];
 
   if (session) {
-    session.lastAccessed = Date.now();
-    writeSessions(sessions);
+    const now = Date.now();
+    if (now - session.lastAccessed > LAST_ACCESS_UPDATE_MS) {
+      session.lastAccessed = now;
+      writeSessions(sessions);
+    }
     return session.dirs;
   }
 
@@ -132,10 +137,11 @@ const addDirPlugin: Plugin = async () => {
     },
     'chat.message': async (context) => {
       getSessionDirs(context.sessionID);
+      const now = Date.now();
 
-      if (!cleanedSessions.has(context.sessionID)) {
+      if (now - lastCleaned > CLEANUP_INTERVAL_MS) {
         cleanOldSessions();
-        cleanedSessions.add(context.sessionID);
+        lastCleaned = now;
       }
     },
     'permission.ask': async (input: Permission, output: { status: 'allow' | 'deny' | 'ask' }) => {
@@ -143,7 +149,6 @@ const addDirPlugin: Plugin = async () => {
       const check = (value: unknown) => typeof value === 'string' && isInSessionDirs(value, dirs);
 
       const approved = [
-        input.type === 'external_directory',
         check(input.title),
         input.pattern && (Array.isArray(input.pattern) ? input.pattern : [input.pattern]).some(check),
         Object.values(input.metadata || {}).flat().some(check)
