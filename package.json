@@ -8,7 +8,8 @@
   "files": [
     "dist",
     "command",
-    "scripts"
+    "scripts",
+    "README.md"
   ],
   "scripts": {
     "build": "tsc",
