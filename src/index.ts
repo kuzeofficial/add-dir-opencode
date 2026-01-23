@@ -150,7 +150,7 @@ const addDirPlugin: Plugin = async () => {
 
       const approved = [
         check(input.title),
-        input.pattern && (Array.isArray(input.pattern) ? input.pattern : [input.pattern]).some(check),
+        (input.pattern ? (Array.isArray(input.pattern) ? input.pattern : [input.pattern]) : []).some(check),
         Object.values(input.metadata || {}).flat().some(check)
       ].some(Boolean);
 

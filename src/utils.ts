@@ -36,6 +36,10 @@ export function countFiles(directory: string): number {
           continue;
         }
 
+        if (entry.isSymbolicLink()) {
+          continue;
+        }
+
         const fullPath = path.join(dir, entry.name);
 
         if (entry.isDirectory()) {
