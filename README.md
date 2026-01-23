@@ -1,43 +1,64 @@
 # OpenCode Add-Dir Plugin
 
-A plugin for OpenCode that adds the `/add-dir` command to include external directories in your session context.
+Add external directories to your OpenCode session context with automatic permission approval.
 
-## Installation
+## Quick Start
+
+Install and use in one command:
 
 ```bash
-cd ~/.config/opencode/plugins/add-dir
-bun install
+npm install -g opencode-add-dir
 ```
 
-## Features
-
-- Add external directories to session context with `/add-dir <path>`
-- Smart filtering of binary files and common build directories
-- Recursive directory scanning
-- Configurable limits (100KB per file, 500 files max)
-- Read and write access to added directories
-
-## Configuration
-
-The plugin automatically installs its command file to `~/.config/opencode/command/add-dir.md` during installation.
-
-Ensure your `~/.config/opencode/opencode.jsonc` includes:
+Then add to your `~/.config/opencode/opencode.jsonc`:
 
 ```jsonc
-"plugin": [
-  "./plugins/add-dir"
-]
+{
+  "plugin": [
+    "opencode-add-dir"
+  ]
+}
 ```
 
-## Usage
+That's it! The plugin is ready to use. Restart OpenCode and run:
 
 ```bash
 /add-dir /path/to/your/project
 ```
 
-## Filtering Rules
+## Features
 
-### Ignored Directories
+- **Zero Configuration**: Works immediately after installation
+- **Auto Permission**: No permission prompts for directories you add
+- **Smart Filtering**: Automatically skips node_modules, .git, binary files, etc.
+- **Recursive Scanning**: Reads entire directory structures
+- **File Limits**: 100KB per file, 500 files max (to prevent overwhelm)
+- **Full Access**: Read and write to added directories
+
+## How It Works
+
+1. `/add-dir <path>` scans the directory and adds all files to context
+2. Directory path is automatically registered for future access
+3. Any operations on that directory skip permission prompts
+4. Works recursively - all subdirectories are auto-approved
+
+## Usage Examples
+
+```bash
+# Add a project directory
+/add-dir ~/projects/my-app
+
+# Add any external directory
+/add-dir /path/to/external/code
+
+# Now you can read/write without permission prompts
+read ~/projects/my-app/src/index.js
+edit ~/projects/my-app/package.json
+```
+
+## What Gets Filtered
+
+### Automatically Skipped Directories
 - `node_modules`
 - `.git`
 - `dist`, `build`
@@ -49,29 +70,57 @@ Ensure your `~/.config/opencode/opencode.jsonc` includes:
 - `.nuxt`, `.output`
 - `tmp`, `temp`, `.turbo`
 
-### Binary Files
+### Binary Files (Not Read)
 Images, PDFs, Office docs, archives, media files, executables, compiled files, etc.
+
+## Installation Details
+
+### Automatic Setup
+The plugin's postinstall script automatically:
+1. Finds your OpenCode config directory
+2. Creates the `/add-dir` command file
+3. Installs it to `~/.config/opencode/command/add-dir.md`
+
+### Manual Installation (If Auto-Setup Fails)
+
+If the command file doesn't appear automatically:
+
+```bash
+# Create the command file manually
+cat > ~/.config/opencode/command/add-dir.md << 'EOF'
+---
+description: Add an external directory to the session context
+---
+Add the directory at path $ARGUMENTS to this session's context.
+Use the add_dir tool to read all files from the specified directory.
+EOF
+```
 
 ## Development
 
 ```bash
-cd ~/.config/opencode/plugins/add-dir
+# Clone the plugin
+git clone <repo-url>
+cd opencode-add-dir
 
 # Install dependencies
 bun install
 
-# Build the plugin
+# Build
 bun run build
 
-# The build output goes to dist/
+# Test locally
+npm link
+cd ~/.config/opencode
+npm link opencode-add-dir
 ```
 
 ## Files
 
-- `src/index.ts` - Main plugin implementation
+- `src/index.ts` - Main plugin with permission auto-approval
 - `command/add-dir.md` - Command definition (auto-installed)
 - `scripts/install.js` - Post-install script (auto-runs)
-- `package.json` - Package configuration
+- `package.json` - NPM package configuration
 
 ## License
 
