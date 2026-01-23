@@ -59,6 +59,13 @@ interface AddedDirectories {
   directories: string[];
 }
 
+interface ScanResult {
+  files: FileInfo[];
+  tree: string[];
+  fileCount: number;
+  skipped: number;
+}
+
 const ADDED_DIRS_FILE = path.join(__dirname, '.added-dirs.json');
 
 function getAddedDirectories(): Set<string> {
@@ -108,6 +115,84 @@ function shouldIgnoreDirectory(dirName: string): boolean {
   return IGNORED_DIRECTORIES.has(dirName);
 }
 
+function sortDirectoryEntries(entries: fs.Dirent[]): fs.Dirent[] {
+  return entries.sort((a, b) => {
+    if (a.isDirectory() && !b.isDirectory()) {
+      return -1;
+    }
+    if (!a.isDirectory() && b.isDirectory()) {
+      return 1;
+    }
+    return a.name.localeCompare(b.name);
+  });
+}
+
+function createTreeEntry(name: string, isDirectory: boolean, depth: number): string {
+  const indent = '  '.repeat(depth);
+  const suffix = isDirectory ? '/' : '';
+  return `${indent}${name}${suffix}`;
+}
+
+function readFileContent(filePath: string, maxSize: number): { content: string | undefined; isTruncated: boolean } {
+  try {
+    const content = fs.readFileSync(filePath, 'utf-8');
+
+    if (content.length > maxSize) {
+      return {
+        content: content.slice(0, maxSize),
+        isTruncated: true
+      };
+    }
+
+    return {
+      content,
+      isTruncated: false
+    };
+  } catch (error) {
+    return {
+      content: undefined,
+      isTruncated: false
+    };
+  }
+}
+
+function isFileSizeValid(filePath: string): boolean {
+  const stats = fs.statSync(filePath);
+  return stats.size <= MAX_FILE_SIZE_BYTES;
+}
+
+function shouldProcessDirectory(entry: fs.Dirent, result: ScanResult): boolean {
+  if (result.fileCount >= MAX_FILES) {
+    return false;
+  }
+  if (!entry.isDirectory()) {
+    return false;
+  }
+  if (shouldIgnoreDirectory(entry.name)) {
+    result.skipped++;
+    return false;
+  }
+  return true;
+}
+
+function shouldProcessFile(entry: fs.Dirent, filePath: string, result: ScanResult): boolean {
+  if (result.fileCount >= MAX_FILES) {
+    return false;
+  }
+  if (!entry.isFile()) {
+    return false;
+  }
+  if (isBinaryFile(entry.name)) {
+    result.skipped++;
+    return false;
+  }
+  if (!isFileSizeValid(filePath)) {
+    result.skipped++;
+    return false;
+  }
+  return true;
+}
+
 function scanDirectory(
   dirPath: string,
   baseDir: string,
@@ -115,89 +200,63 @@ function scanDirectory(
   tree: string[] = [],
   depth: number = 0,
   fileCount: number = 0
-): { files: FileInfo[], tree: string[], fileCount: number, skipped: number } {
-  if (fileCount >= MAX_FILES) {
-    return { files, tree, fileCount, skipped: 0 };
+): ScanResult {
+  const result: ScanResult = {
+    files,
+    tree,
+    fileCount,
+    skipped: 0
+  };
+
+  if (result.fileCount >= MAX_FILES) {
+    return result;
   }
 
-  let skipped = 0;
   const entries = fs.readdirSync(dirPath, { withFileTypes: true });
-
-  const sortedEntries = entries.sort((a, b) => {
-    if (a.isDirectory() && !b.isDirectory()) return -1;
-    if (!a.isDirectory() && b.isDirectory()) return 1;
-    return a.name.localeCompare(b.name);
-  });
+  const sortedEntries = sortDirectoryEntries(entries);
 
   for (const entry of sortedEntries) {
-    if (fileCount >= MAX_FILES) {
+    if (result.fileCount >= MAX_FILES) {
       break;
     }
 
     const fullPath = path.join(dirPath, entry.name);
     const relativePath = path.relative(baseDir, fullPath);
-    const indent = '  '.repeat(depth);
 
-    if (entry.isDirectory()) {
-      if (shouldIgnoreDirectory(entry.name)) {
-        skipped++;
-        continue;
-      }
+    if (shouldProcessDirectory(entry, result)) {
+      result.tree.push(createTreeEntry(entry.name, true, depth));
 
-      tree.push(`${indent}${entry.name}/`);
-      const result = scanDirectory(
+      const nestedResult = scanDirectory(
         fullPath,
         baseDir,
-        files,
-        tree,
+        result.files,
+        result.tree,
         depth + 1,
-        fileCount
+        result.fileCount
       );
-      files = result.files;
-      tree = result.tree;
-      fileCount = result.fileCount;
-      skipped += result.skipped;
-    } else if (entry.isFile()) {
-      if (isBinaryFile(entry.name)) {
-        skipped++;
-        continue;
-      }
+
+      result.files = nestedResult.files;
+      result.tree = nestedResult.tree;
+      result.fileCount = nestedResult.fileCount;
+      result.skipped += nestedResult.skipped;
+    } else if (shouldProcessFile(entry, fullPath, result)) {
+      result.tree.push(createTreeEntry(entry.name, false, depth));
 
       const stats = fs.statSync(fullPath);
+      const contentResult = readFileContent(fullPath, MAX_FILE_SIZE_BYTES);
 
-      if (stats.size > MAX_FILE_SIZE_BYTES) {
-        skipped++;
-        continue;
-      }
-
-      tree.push(`${indent}${entry.name}`);
-
-      let content: string | undefined;
-      let isTruncated = false;
-
-      try {
-        content = fs.readFileSync(fullPath, 'utf-8');
-
-        if (content.length > MAX_FILE_SIZE_BYTES) {
-          content = content.slice(0, MAX_FILE_SIZE_BYTES);
-          isTruncated = true;
-        }
-      } catch (error) {
-        content = undefined;
-      }
-
-      files.push({
+      result.files.push({
         path: relativePath,
         size: stats.size,
-        content,
-        isTruncated
+        content: contentResult.content,
+        isTruncated: contentResult.isTruncated
       });
 
-      fileCount++;
+      result.fileCount++;
     }
   }
 
-  return { files, tree, fileCount, skipped };
+  return result;
 }
 
 const addDirPlugin: Plugin = async () => {
