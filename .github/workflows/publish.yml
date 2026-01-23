@@ -1,0 +1,82 @@
+name: Publish Package
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  publish-npm:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Publish to npm
+        run: npm publish --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  create-github-release:
+    needs: publish-npm
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Get version from package.json
+        id: version
+        run: echo "version=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
+
+      - name: Create Release Notes
+        id: release_notes
+        run: |
+          cat << EOF > release_notes.md
+          ## Release v${{ steps.version.outputs.version }}
+
+          ## Installation
+          \`\`\`bash
+          cd ~/.config/opencode
+          npm install opencode-add-dir
+          \`\`\`
+
+          ## Quick Start
+          Add \`"opencode-add-dir"\` to your \`~/.config/opencode/opencode.jsonc\`:
+          \`\`\`jsonc
+          {
+            "plugin": [
+              "opencode-add-dir"
+            ]
+          }
+          \`\`\`
+          
+          Then restart OpenCode and run:
+          \`\`\`bash
+          /add-dir /path/to/your/project
+          \`\`\`
+
+          ## Changes
+          See the [changelog](https://github.com/kuzeofficial/add-dir-opencode/blob/main/README.md) for details.
+          EOF
+
+      - name: Create GitHub Release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          release_name: Release v${{ steps.version.outputs.version }}
+          body_path: release_notes.md
+          draft: false
+          prerelease: false
