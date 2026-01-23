@@ -3,102 +3,102 @@ import type { Plugin } from '@opencode-ai/plugin';
 import type { Permission } from '@opencode-ai/sdk';
 import fs from 'fs';
 import path from 'path';
+import { resolveDirectoryPath, validateDirectory, countFiles, isPathInDirectory } from './utils.js';
 
-const IGNORED_DIRECTORIES = new Set([
-  'node_modules',
-  '.git',
-  'dist',
-  'build',
-  '.next',
-  '__pycache__',
-  '.venv',
-  'venv',
-  'env',
-  '.env',
-  'coverage',
-  '.nuxt',
-  '.output',
-  'tmp',
-  'temp',
-  '.turbo'
-]);
+const SESSIONS_FILE = path.join(__dirname, '.sessions.json');
+const MAX_SESSIONS = 50;
+const SESSION_AGE_DAYS = 30;
 
-const BINARY_EXTENSIONS = new Set([
-  '.png', '.jpg', '.jpeg', '.gif', '.bmp', '.ico', '.svg', '.webp',
-  '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx',
-  '.zip', '.tar', '.gz', '.rar', '.7z',
-  '.mp3', '.mp4', '.avi', '.mov', '.wav',
-  '.exe', '.dll', '.so', '.dylib', '.bin',
-  '.class', '.jar', '.war',
-  '.pyc', '.pyo',
-  '.db', '.sqlite', '.sqlite3',
-  '.lock', '.log'
-]);
-
-const MAX_FILE_SIZE_BYTES = 100 * 1024;
-const MAX_FILES = 500;
-
-interface FileInfo {
-  path: string;
-  size: number;
-  content?: string;
-  isTruncated: boolean;
+interface SessionData {
+  dirs: string[];
+  lastAccessed: number;
 }
 
-interface DirectoryScanResult {
-  directory: string;
-  totalFilesFound: number;
-  filesProcessed: number;
-  filesSkipped: number;
-  filesTooLarge: number;
-  tree: string[];
-  files: FileInfo[];
+interface Sessions {
+  [sessionId: string]: SessionData;
 }
 
-interface AddedDirectories {
-  directories: string[];
-}
+const cleanedSessions = new Set<string>();
 
-interface ScanResult {
-  files: FileInfo[];
-  tree: string[];
-  fileCount: number;
-  skipped: number;
-}
-
-const ADDED_DIRS_FILE = path.join(__dirname, '.added-dirs.json');
-
-function getAddedDirectories(): Set<string> {
+function readSessions(): Sessions {
   try {
-    if (fs.existsSync(ADDED_DIRS_FILE)) {
-      const content = fs.readFileSync(ADDED_DIRS_FILE, 'utf-8');
-      const data: AddedDirectories = JSON.parse(content);
-      return new Set(data.directories);
+    if (fs.existsSync(SESSIONS_FILE)) {
+      return JSON.parse(fs.readFileSync(SESSIONS_FILE, 'utf-8')) as Sessions;
     }
   } catch (error) {
-    console.error('Failed to read added directories:', error);
+    console.error('Failed to read sessions:', error);
   }
-  return new Set();
+  return {};
 }
 
-function saveAddedDirectory(dirPath: string): void {
-  const added = getAddedDirectories();
-  const normalizedPath = path.resolve(dirPath);
+function writeSessions(sessions: Sessions): void {
+  fs.writeFileSync(SESSIONS_FILE, JSON.stringify(sessions, null, 2));
+}
 
-  if (!added.has(normalizedPath)) {
-    added.add(normalizedPath);
-    const data: AddedDirectories = { directories: Array.from(added) };
-    fs.writeFileSync(ADDED_DIRS_FILE, JSON.stringify(data, null, 2));
+function getSessionDirs(sessionId: string): string[] {
+  const sessions = readSessions();
+  const session = sessions[sessionId];
+
+  if (session) {
+    session.lastAccessed = Date.now();
+    writeSessions(sessions);
+    return session.dirs;
+  }
+
+  return [];
+}
+
+function addSessionDir(sessionId: string, dirPath: string): void {
+  const sessions = readSessions();
+  const normalized = resolveDirectoryPath(dirPath);
+
+  if (!sessions[sessionId]) {
+    sessions[sessionId] = { dirs: [], lastAccessed: Date.now() };
+  }
+
+  if (!sessions[sessionId].dirs.includes(normalized)) {
+    sessions[sessionId].dirs.push(normalized);
+    sessions[sessionId].lastAccessed = Date.now();
+    writeSessions(sessions);
   }
 }
 
-function isPathInAddedDirectories(requestedPath: string): boolean {
-  const addedDirs = getAddedDirectories();
-  const normalizedPath = path.resolve(requestedPath);
+function cleanOldSessions(): void {
+  const sessions = readSessions();
+  const now = Date.now();
+  const maxAge = SESSION_AGE_DAYS * 24 * 60 * 60 * 1000;
 
-  for (const dir of addedDirs) {
-    const relative = path.relative(dir, normalizedPath);
-    if (!relative.startsWith('..') && !path.isAbsolute(relative)) {
+  const entries = Object.entries(sessions);
+  const recentSessions = entries.filter(([, data]) =>
+    now - data.lastAccessed < maxAge
+  );
+
+  if (recentSessions.length <= MAX_SESSIONS) {
+    if (recentSessions.length === entries.length) {
+      return;
+    }
+  } else {
+    recentSessions.sort(([, a], [, b]) => b.lastAccessed - a.lastAccessed);
+    recentSessions.splice(MAX_SESSIONS);
+  }
+
+  const cleanedSessions: Sessions = {};
+  recentSessions.forEach(([id, data]) => {
+    cleanedSessions[id] = data;
+  });
+
+  writeSessions(cleanedSessions);
+}
+
+function isInSessionDirs(filePath: string, dirs: string[]): boolean {
+  const normalizedFilePath = path.resolve(filePath);
+
+  for (const dir of dirs) {
+    const normalizedDir = path.resolve(dir);
+    const relative = path.relative(normalizedDir, normalizedFilePath);
+    const isInside = !relative.startsWith('..') && !path.isAbsolute(relative);
+
+    if (isInside) {
       return true;
     }
   }
@@ -106,235 +106,51 @@ function isPathInAddedDirectories(requestedPath: string): boolean {
   return false;
 }
 
-function isBinaryFile(filePath: string): boolean {
-  const ext = path.extname(filePath).toLowerCase();
-  return BINARY_EXTENSIONS.has(ext);
-}
-
-function shouldIgnoreDirectory(dirName: string): boolean {
-  return IGNORED_DIRECTORIES.has(dirName);
-}
-
-function sortDirectoryEntries(entries: fs.Dirent[]): fs.Dirent[] {
-  return entries.sort((a, b) => {
-    if (a.isDirectory() && !b.isDirectory()) {
-      return -1;
-    }
-    if (!a.isDirectory() && b.isDirectory()) {
-      return 1;
-    }
-    return a.name.localeCompare(b.name);
-  });
-}
-
-function createTreeEntry(name: string, isDirectory: boolean, depth: number): string {
-  const indent = '  '.repeat(depth);
-  const suffix = isDirectory ? '/' : '';
-  return `${indent}${name}${suffix}`;
-}
-
-function readFileContent(filePath: string, maxSize: number): { content: string | undefined; isTruncated: boolean } {
-  try {
-    const content = fs.readFileSync(filePath, 'utf-8');
-
-    if (content.length > maxSize) {
-      return {
-        content: content.slice(0, maxSize),
-        isTruncated: true
-      };
-    }
-
-    return {
-      content,
-      isTruncated: false
-    };
-  } catch (error) {
-    return {
-      content: undefined,
-      isTruncated: false
-    };
-  }
-}
-
-function isFileSizeValid(filePath: string): boolean {
-  const stats = fs.statSync(filePath);
-  return stats.size <= MAX_FILE_SIZE_BYTES;
-}
-
-
-
-function processDirectory(
-  entry: fs.Dirent,
-  dirPath: string,
-  baseDir: string,
-  depth: number,
-  result: ScanResult
-): void {
-  const fullPath = path.join(dirPath, entry.name);
-  result.tree.push(createTreeEntry(entry.name, true, depth));
-
-  const nestedResult = scanDirectory(
-    fullPath,
-    baseDir,
-    result.files,
-    result.tree,
-    depth + 1,
-    result.fileCount
-  );
-
-  result.files = nestedResult.files;
-  result.tree = nestedResult.tree;
-  result.fileCount = nestedResult.fileCount;
-  result.skipped += nestedResult.skipped;
-}
-
-function processFile(
-  fullPath: string,
-  baseDir: string,
-  depth: number,
-  result: ScanResult
-): void {
-  const relativePath = path.relative(baseDir, fullPath);
-  const fileName = path.basename(fullPath);
-
-  result.tree.push(createTreeEntry(fileName, false, depth));
-
-  const stats = fs.statSync(fullPath);
-  const contentResult = readFileContent(fullPath, MAX_FILE_SIZE_BYTES);
-
-  result.files.push({
-    path: relativePath,
-    size: stats.size,
-    content: contentResult.content,
-    isTruncated: contentResult.isTruncated
-  });
-
-  result.fileCount++;
-}
-
-function processEntry(
-  entry: fs.Dirent,
-  dirPath: string,
-  baseDir: string,
-  depth: number,
-  result: ScanResult
-): void {
-  if (result.fileCount >= MAX_FILES) {
-    return;
-  }
-
-  if (entry.isDirectory()) {
-    if (shouldIgnoreDirectory(entry.name)) {
-      result.skipped++;
-      return;
-    }
-    processDirectory(entry, dirPath, baseDir, depth, result);
-    return;
-  }
-
-  if (!entry.isFile()) {
-    result.skipped++;
-    return;
-  }
-
-  if (isBinaryFile(entry.name)) {
-    result.skipped++;
-    return;
-  }
-
-  const fullPath = path.join(dirPath, entry.name);
-
-  if (!isFileSizeValid(fullPath)) {
-    result.skipped++;
-    return;
-  }
-
-  processFile(fullPath, baseDir, depth, result);
-}
-
-function scanDirectory(
-  dirPath: string,
-  baseDir: string,
-  files: FileInfo[] = [],
-  tree: string[] = [],
-  depth: number = 0,
-  fileCount: number = 0
-): ScanResult {
-  const result: ScanResult = {
-    files,
-    tree,
-    fileCount,
-    skipped: 0
-  };
-
-  const entries = fs.readdirSync(dirPath, { withFileTypes: true });
-  const sortedEntries = sortDirectoryEntries(entries);
-
-  for (const entry of sortedEntries) {
-    processEntry(entry, dirPath, baseDir, depth, result);
-  }
-
-  return result;
-}
-
 const addDirPlugin: Plugin = async () => {
   return {
     tool: {
       add_dir: tool({
-        description: 'Add an external directory to the session context by reading all its files',
+        description: 'Add a directory to the workspace. Access is auto-approved for files in added directories.',
         args: {
-          directory: tool.schema.string().describe('Path to the directory to add')
+          directory: tool.schema.string().describe('Absolute path to the directory')
         },
-        execute: async ({ directory }) => {
-          const resolvedPath = path.resolve(directory);
-
-          if (!fs.existsSync(resolvedPath)) {
-            throw new Error(`Directory does not exist: ${resolvedPath}`);
-          }
-
-          if (!fs.statSync(resolvedPath).isDirectory()) {
-            throw new Error(`Path is not a directory: ${resolvedPath}`);
-          }
-
-          try {
-            fs.accessSync(resolvedPath, fs.constants.R_OK);
-          } catch (error) {
-            throw new Error(`Permission denied: Cannot read directory ${resolvedPath}`);
-          }
-
-          const scanResult = scanDirectory(resolvedPath, resolvedPath);
-          const totalFound = scanResult.fileCount + scanResult.skipped;
-          const filesTooLarge = scanResult.skipped;
-
-          const output: DirectoryScanResult = {
-            directory: resolvedPath,
-            totalFilesFound: totalFound,
-            filesProcessed: scanResult.fileCount,
-            filesSkipped: scanResult.skipped - filesTooLarge,
-            filesTooLarge,
-            tree: scanResult.tree,
-            files: scanResult.files
-          };
-
-          saveAddedDirectory(resolvedPath);
+        execute: async ({ directory }, context) => {
+          const sessionId = context.sessionID;
+          const resolvedPath = resolveDirectoryPath(directory);
+          validateDirectory(resolvedPath);
+          addSessionDir(sessionId, resolvedPath);
+          const fileCount = countFiles(resolvedPath);
 
           return JSON.stringify({
-            ...output,
-            message: 'Directory added to context. Future access to this directory will not require permission prompts.'
+            directory: resolvedPath,
+            status: 'added',
+            message: 'Directory added to workspace',
+            fileCount
           }, null, 2);
         }
       })
     },
-    'permission.ask': async (input: Permission, output) => {
-      if (input.pattern) {
-        const patterns = Array.isArray(input.pattern) ? input.pattern : [input.pattern];
+    'chat.message': async (context) => {
+      getSessionDirs(context.sessionID);
 
-        for (const pattern of patterns) {
-          if (typeof pattern === 'string' && isPathInAddedDirectories(pattern)) {
-            output.status = 'allow';
-            return;
-          }
-        }
+      if (!cleanedSessions.has(context.sessionID)) {
+        cleanOldSessions();
+        cleanedSessions.add(context.sessionID);
+      }
+    },
+    'permission.ask': async (input: Permission, output: { status: 'allow' | 'deny' | 'ask' }) => {
+      const dirs = getSessionDirs(input.sessionID);
+      const check = (value: unknown) => typeof value === 'string' && isInSessionDirs(value, dirs);
+
+      const approved = [
+        input.type === 'external_directory',
+        check(input.title),
+        input.pattern && (Array.isArray(input.pattern) ? input.pattern : [input.pattern]).some(check),
+        Object.values(input.metadata || {}).flat().some(check)
+      ].some(Boolean);
+
+      if (approved) {
+        output.status = 'allow';
       }
     }
   };
