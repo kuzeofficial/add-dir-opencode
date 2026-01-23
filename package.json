@@ -1,13 +1,14 @@
 {
   "name": "opencode-add-dir",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "OpenCode plugin to add external directories to session context",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "files": [
     "dist",
-    "command"
+    "command",
+    "scripts"
   ],
   "scripts": {
     "build": "tsc",
