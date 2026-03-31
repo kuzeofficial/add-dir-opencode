@@ -14,6 +14,10 @@ export interface DirEntry {
   persist: boolean
 }
 
+export function expandHome(p: string) {
+  return p.startsWith("~/") ? (process.env["HOME"] || "~") + p.slice(1) : p
+}
+
 export function loadDirs(): Map<string, DirEntry> {
   const dirs = new Map<string, DirEntry>()
   const file = join(stateDir(), "directories.json")
