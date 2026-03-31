@@ -1,5 +1,4 @@
 import type { Plugin, Config } from "@opencode-ai/plugin"
-import { tool } from "@opencode-ai/plugin"
 import { loadDirs, saveDirs } from "./state.js"
 import { validateDir } from "./validate.js"
 import { permissionGlob, grantSession, grantSessionAsync, notify, shouldGrantBeforeTool, autoApprovePermission } from "./permissions.js"
@@ -93,33 +92,6 @@ export const AddDirPlugin: Plugin = async ({ client, worktree, directory }) => {
 
     "experimental.chat.system.transform": async (_input, output) => {
       output.system.push(...collectAgentContext(dirs))
-    },
-
-    tool: {
-      add_dir: tool({
-        description: "Add an external directory as a working directory. Files in added directories can be read and edited without permission prompts.",
-        args: {
-          path: tool.schema.string().describe("Absolute or relative path to directory"),
-          remember: tool.schema.boolean().optional().describe("Persist across sessions"),
-        },
-        async execute(args, ctx) {
-          const result = add(args.path, args.remember ?? false)
-          if (result.ok) grantSessionAsync(sdk, ctx.sessionID, result.message)
-          return result.message
-        },
-      }),
-
-      list_dirs: tool({
-        description: "List all added working directories.",
-        args: {},
-        async execute() { return list() },
-      }),
-
-      remove_dir: tool({
-        description: "Remove a previously added working directory.",
-        args: { path: tool.schema.string().describe("Path of directory to remove") },
-        async execute(args) { return remove(args.path) },
-      }),
     },
   }
 }

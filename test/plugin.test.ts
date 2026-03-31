@@ -3,7 +3,6 @@ import { existsSync, mkdirSync, rmSync, writeFileSync } from "fs"
 import { join } from "path"
 import { tmpdir } from "os"
 import type { Hooks, PluginInput, Config } from "@opencode-ai/plugin"
-import type { ToolContext } from "@opencode-ai/plugin"
 import { AddDirPlugin } from "../src/plugin"
 import type { PromptBody, PermissionReplyBody, PermissionEvent } from "../src/types"
 
@@ -38,19 +37,6 @@ function mockClient() {
     postSessionIdPermissionsPermissionId: async (o: PermReplyCall) => {
       calls.push({ method: "permReply", args: o }); return {}
     },
-  }
-}
-
-function toolCtx(sid = "s1"): ToolContext {
-  return {
-    sessionID: sid,
-    messageID: "m1",
-    agent: "coder",
-    directory: PROJECT,
-    worktree: PROJECT,
-    abort: new AbortController().signal,
-    metadata: () => {},
-    ask: async () => {},
   }
 }
 
@@ -89,6 +75,10 @@ async function runCommand(hooks: Hooks, command: string, args: string, sessionID
   await flush()
 }
 
+async function addDir(hooks: Hooks, path: string, flags = "") {
+  await runCommand(hooks, "add-dir", flags ? `${path} ${flags}` : path)
+}
+
 beforeEach(() => {
   mkdirSync(PROJECT, { recursive: true })
   mkdirSync(EXTERNAL, { recursive: true })
@@ -113,7 +103,7 @@ describe("config", () => {
 
   test("injects permission rules for persisted dirs", async () => {
     const { hooks } = await createPlugin()
-    await hooks.tool!.add_dir.execute({ path: EXTERNAL, remember: true }, toolCtx())
+    await addDir(hooks, EXTERNAL, "--remember")
     const cfg = {} as Config
     await hooks.config!(cfg)
     const perm = (cfg as Record<string, unknown>).permission as Record<string, Record<string, string>>
@@ -126,115 +116,69 @@ describe("config", () => {
     await hooks.config!(cfg)
     expect((cfg as Record<string, unknown>).permission).toBeUndefined()
   })
-})
 
-describe("add_dir tool", () => {
-  test("adds valid directory", async () => {
+  test("does not expose any tools", async () => {
     const { hooks } = await createPlugin()
-    const msg = await hooks.tool!.add_dir.execute({ path: EXTERNAL }, toolCtx())
-    expect(msg).toContain("Added")
-    expect(msg).toContain(EXTERNAL)
-    expect(msg).toContain("session")
-  })
-
-  test("adds with --remember flag", async () => {
-    const { hooks } = await createPlugin()
-    const msg = await hooks.tool!.add_dir.execute({ path: EXTERNAL, remember: true }, toolCtx())
-    expect(msg).toContain("persistent")
-    expect(existsSync(join(TMP, "data", "opencode", "add-dir", "directories.json"))).toBe(true)
-  })
-
-  test("rejects nonexistent path", async () => {
-    const { hooks } = await createPlugin()
-    expect(await hooks.tool!.add_dir.execute({ path: "/nope/xyz" }, toolCtx())).toContain("not found")
-  })
-
-  test("rejects file path", async () => {
-    writeFileSync(join(TMP, "file.txt"), "hi")
-    const { hooks } = await createPlugin()
-    expect(await hooks.tool!.add_dir.execute({ path: join(TMP, "file.txt") }, toolCtx())).toContain("not a directory")
-  })
-
-  test("rejects path inside project", async () => {
-    mkdirSync(join(PROJECT, "sub"))
-    const { hooks } = await createPlugin()
-    expect(await hooks.tool!.add_dir.execute({ path: join(PROJECT, "sub") }, toolCtx())).toContain("already within")
-  })
-
-  test("rejects duplicate", async () => {
-    const { hooks } = await createPlugin()
-    await hooks.tool!.add_dir.execute({ path: EXTERNAL }, toolCtx())
-    expect(await hooks.tool!.add_dir.execute({ path: EXTERNAL }, toolCtx())).toContain("already accessible")
-  })
-
-  test("rejects empty path", async () => {
-    const { hooks } = await createPlugin()
-    expect(await hooks.tool!.add_dir.execute({ path: "" }, toolCtx())).toContain("No directory")
-  })
-
-  test("grants session permission on success", async () => {
-    const { hooks, client } = await createPlugin()
-    await hooks.tool!.add_dir.execute({ path: EXTERNAL }, toolCtx())
-    await flush()
-    expect(findCall(client.calls, "promptAsync", (a) => !!a.body.tools?.external_directory)).toBeDefined()
-  })
-
-  test("does not grant permission on failure", async () => {
-    const { hooks, client } = await createPlugin()
-    await hooks.tool!.add_dir.execute({ path: "/nope" }, toolCtx())
-    await flush()
-    expect(findCall(client.calls, "promptAsync", (a) => !!a.body.tools?.external_directory)).toBeUndefined()
-  })
-})
-
-describe("list_dirs tool", () => {
-  test("returns empty message when no dirs", async () => {
-    const { hooks } = await createPlugin()
-    expect(await hooks.tool!.list_dirs.execute({}, toolCtx())).toContain("No additional")
-  })
-
-  test("returns added dirs with labels", async () => {
-    const { hooks } = await createPlugin()
-    await hooks.tool!.add_dir.execute({ path: EXTERNAL }, toolCtx())
-    const result = await hooks.tool!.list_dirs.execute({}, toolCtx())
-    expect(result).toContain(EXTERNAL)
-    expect(result).toContain("session")
-  })
-})
-
-describe("remove_dir tool", () => {
-  test("removes existing dir", async () => {
-    const { hooks } = await createPlugin()
-    await hooks.tool!.add_dir.execute({ path: EXTERNAL }, toolCtx())
-    expect(await hooks.tool!.remove_dir.execute({ path: EXTERNAL }, toolCtx())).toContain("Removed")
-    expect(await hooks.tool!.list_dirs.execute({}, toolCtx())).toContain("No additional")
-  })
-
-  test("rejects unknown dir", async () => {
-    const { hooks } = await createPlugin()
-    expect(await hooks.tool!.remove_dir.execute({ path: "/unknown" }, toolCtx())).toContain("not in the directory list")
+    expect(hooks.tool).toBeUndefined()
   })
 })
 
 describe("/add-dir command", () => {
-  test("sends grant with tools on success", async () => {
+  test("adds valid directory with grant", async () => {
     const { hooks, client } = await createPlugin()
-    await runCommand(hooks, "add-dir", EXTERNAL)
-    expect(findCall(client.calls, "promptAsync", (a) => !!a.body.tools?.external_directory)).toBeDefined()
+    await addDir(hooks, EXTERNAL)
+    const call = findCall(client.calls, "promptAsync", (a) => !!a.body.tools?.external_directory)
+    expect(call).toBeDefined()
+    expect(call!.args.body.parts[0].text).toContain("Added")
+    expect(call!.args.body.parts[0].text).toContain(EXTERNAL)
+    expect(call!.args.body.parts[0].text).toContain("session")
   })
 
-  test("sends notify without tools on failure", async () => {
+  test("adds with --remember flag as persistent", async () => {
     const { hooks, client } = await createPlugin()
-    await runCommand(hooks, "add-dir", "/nope")
+    await addDir(hooks, EXTERNAL, "--remember")
+    const call = findCall(client.calls, "promptAsync")
+    expect(call!.args.body.parts[0].text).toContain("persistent")
+    expect(existsSync(join(TMP, "data", "opencode", "add-dir", "directories.json"))).toBe(true)
+  })
+
+  test("rejects nonexistent path without grant", async () => {
+    const { hooks, client } = await createPlugin()
+    await addDir(hooks, "/nope/xyz")
     const call = findCall(client.calls, "promptAsync")
     expect(call).toBeDefined()
     expect(call!.args.body.tools).toBeUndefined()
     expect(call!.args.body.parts[0].text).toContain("not found")
   })
 
+  test("rejects file path", async () => {
+    writeFileSync(join(TMP, "file.txt"), "hi")
+    const { hooks, client } = await createPlugin()
+    await addDir(hooks, join(TMP, "file.txt"))
+    const call = findCall(client.calls, "promptAsync")
+    expect(call!.args.body.parts[0].text).toContain("not a directory")
+  })
+
+  test("rejects path inside project", async () => {
+    mkdirSync(join(PROJECT, "sub"))
+    const { hooks, client } = await createPlugin()
+    await addDir(hooks, join(PROJECT, "sub"))
+    const call = findCall(client.calls, "promptAsync")
+    expect(call!.args.body.parts[0].text).toContain("already within")
+  })
+
+  test("rejects duplicate", async () => {
+    const { hooks, client } = await createPlugin()
+    await addDir(hooks, EXTERNAL)
+    client.calls.length = 0
+    await addDir(hooks, EXTERNAL)
+    const call = findCall(client.calls, "promptAsync")
+    expect(call!.args.body.parts[0].text).toContain("already accessible")
+  })
+
   test("sends usage when no args", async () => {
     const { hooks, client } = await createPlugin()
-    await runCommand(hooks, "add-dir", "")
+    await addDir(hooks, "")
     expect(findCall(client.calls, "promptAsync", (a) => a.body.parts[0].text.includes("Usage"))).toBeDefined()
   })
 
@@ -245,11 +189,22 @@ describe("/add-dir command", () => {
 })
 
 describe("/list-dir command", () => {
-  test("sends dir list via notify", async () => {
+  test("lists added dirs", async () => {
     const { hooks, client } = await createPlugin()
-    await hooks.tool!.add_dir.execute({ path: EXTERNAL, remember: true }, toolCtx())
+    await addDir(hooks, EXTERNAL, "--remember")
+    client.calls.length = 0
     await runCommand(hooks, "list-dir", "")
-    expect(findCall(client.calls, "promptAsync", (a) => !a.body.tools && a.body.parts[0].text.includes(EXTERNAL))).toBeDefined()
+    const call = findCall(client.calls, "promptAsync", (a) => !a.body.tools)
+    expect(call).toBeDefined()
+    expect(call!.args.body.parts[0].text).toContain(EXTERNAL)
+    expect(call!.args.body.parts[0].text).toContain("persistent")
+  })
+
+  test("shows empty message when no dirs", async () => {
+    const { hooks, client } = await createPlugin()
+    await runCommand(hooks, "list-dir", "")
+    const call = findCall(client.calls, "promptAsync")
+    expect(call!.args.body.parts[0].text).toContain("No additional")
   })
 
   test("throws sentinel", async () => {
@@ -259,17 +214,34 @@ describe("/list-dir command", () => {
 })
 
 describe("/remove-dir command", () => {
-  test("sends removal confirmation via notify", async () => {
+  test("removes existing dir", async () => {
     const { hooks, client } = await createPlugin()
-    await hooks.tool!.add_dir.execute({ path: EXTERNAL, remember: true }, toolCtx())
+    await addDir(hooks, EXTERNAL, "--remember")
+    client.calls.length = 0
     await runCommand(hooks, "remove-dir", EXTERNAL)
     expect(findCall(client.calls, "promptAsync", (a) => a.body.parts[0].text.includes("Removed"))).toBeDefined()
+  })
+
+  test("verifies dir is gone after remove", async () => {
+    const { hooks, client } = await createPlugin()
+    await addDir(hooks, EXTERNAL)
+    await runCommand(hooks, "remove-dir", EXTERNAL)
+    client.calls.length = 0
+    await runCommand(hooks, "list-dir", "")
+    const call = findCall(client.calls, "promptAsync")
+    expect(call!.args.body.parts[0].text).toContain("No additional")
   })
 
   test("sends usage when no args", async () => {
     const { hooks, client } = await createPlugin()
     await runCommand(hooks, "remove-dir", "")
     expect(findCall(client.calls, "promptAsync", (a) => a.body.parts[0].text.includes("Usage"))).toBeDefined()
+  })
+
+  test("rejects unknown dir", async () => {
+    const { hooks, client } = await createPlugin()
+    await runCommand(hooks, "remove-dir", "/unknown")
+    expect(findCall(client.calls, "promptAsync", (a) => a.body.parts[0].text.includes("not in the directory list"))).toBeDefined()
   })
 
   test("throws sentinel", async () => {
@@ -288,7 +260,7 @@ describe("command passthrough", () => {
 describe("tool.execute.before (subagent permission)", () => {
   test("grants permission for subagent accessing added dir", async () => {
     const { hooks, client } = await createPlugin()
-    await hooks.tool!.add_dir.execute({ path: EXTERNAL }, toolCtx())
+    await addDir(hooks, EXTERNAL)
     await hooks["tool.execute.before"]!(
       { tool: "read", sessionID: "sub-1", callID: "c1" },
       { args: { filePath: join(EXTERNAL, "f.ts") } },
@@ -298,7 +270,7 @@ describe("tool.execute.before (subagent permission)", () => {
 
   test("caches grant per session", async () => {
     const { hooks, client } = await createPlugin()
-    await hooks.tool!.add_dir.execute({ path: EXTERNAL }, toolCtx())
+    await addDir(hooks, EXTERNAL)
     await hooks["tool.execute.before"]!({ tool: "read", sessionID: "sub-2", callID: "c1" }, { args: { filePath: join(EXTERNAL, "a") } })
     await hooks["tool.execute.before"]!({ tool: "glob", sessionID: "sub-2", callID: "c2" }, { args: { path: EXTERNAL } })
     expect(client.calls.filter((c) => c.method === "prompt" && c.args.path.id === "sub-2").length).toBe(1)
@@ -306,14 +278,14 @@ describe("tool.execute.before (subagent permission)", () => {
 
   test("ignores unrelated paths", async () => {
     const { hooks, client } = await createPlugin()
-    await hooks.tool!.add_dir.execute({ path: EXTERNAL }, toolCtx())
+    await addDir(hooks, EXTERNAL)
     await hooks["tool.execute.before"]!({ tool: "read", sessionID: "sub-3", callID: "c1" }, { args: { filePath: "/other/f" } })
     expect(client.calls.filter((c) => c.method === "prompt" && c.args.path.id === "sub-3").length).toBe(0)
   })
 
   test("ignores non-file tools", async () => {
     const { hooks, client } = await createPlugin()
-    await hooks.tool!.add_dir.execute({ path: EXTERNAL }, toolCtx())
+    await addDir(hooks, EXTERNAL)
     await hooks["tool.execute.before"]!({ tool: "webfetch", sessionID: "sub-4", callID: "c1" }, { args: { filePath: join(EXTERNAL, "x") } })
     expect(client.calls.filter((c) => c.method === "prompt").length).toBe(0)
   })
@@ -322,7 +294,7 @@ describe("tool.execute.before (subagent permission)", () => {
 describe("event auto-approve", () => {
   test("approves matching filepath", async () => {
     const { hooks, client } = await createPlugin()
-    await hooks.tool!.add_dir.execute({ path: EXTERNAL }, toolCtx())
+    await addDir(hooks, EXTERNAL)
     await hooks.event!(permissionAskedEvent("p1", "sub", join(EXTERNAL, "f"), EXTERNAL, [join(EXTERNAL, "*")]))
     const r = findCall(client.calls, "permReply")
     expect(r).toBeDefined()
@@ -332,7 +304,7 @@ describe("event auto-approve", () => {
 
   test("approves matching pattern", async () => {
     const { hooks, client } = await createPlugin()
-    await hooks.tool!.add_dir.execute({ path: EXTERNAL }, toolCtx())
+    await addDir(hooks, EXTERNAL)
     await hooks.event!(permissionAskedEvent("p2", "sub", "", "", [join(EXTERNAL, "*")]))
     expect(findCall(client.calls, "permReply")).toBeDefined()
   })
@@ -356,7 +328,7 @@ describe("AGENTS.md injection", () => {
     mkdirSync(dir, { recursive: true })
     writeFileSync(join(dir, "AGENTS.md"), "# Rules")
     const { hooks } = await createPlugin()
-    await hooks.tool!.add_dir.execute({ path: dir }, toolCtx())
+    await addDir(hooks, dir)
     const out = { system: [] as string[] }
     await hooks["experimental.chat.system.transform"]!({ model: {} } as Parameters<NonNullable<Hooks["experimental.chat.system.transform"]>>[0], out)
     expect(out.system[0]).toContain("Rules")
@@ -368,7 +340,7 @@ describe("AGENTS.md injection", () => {
     mkdirSync(dir, { recursive: true })
     writeFileSync(join(dir, "CLAUDE.md"), "# Claude rules")
     const { hooks } = await createPlugin()
-    await hooks.tool!.add_dir.execute({ path: dir }, toolCtx())
+    await addDir(hooks, dir)
     const out = { system: [] as string[] }
     await hooks["experimental.chat.system.transform"]!({ model: {} } as Parameters<NonNullable<Hooks["experimental.chat.system.transform"]>>[0], out)
     expect(out.system[0]).toContain("Claude rules")
@@ -376,7 +348,7 @@ describe("AGENTS.md injection", () => {
 
   test("skips when no context files exist", async () => {
     const { hooks } = await createPlugin()
-    await hooks.tool!.add_dir.execute({ path: EXTERNAL }, toolCtx())
+    await addDir(hooks, EXTERNAL)
     const out = { system: [] as string[] }
     await hooks["experimental.chat.system.transform"]!({ model: {} } as Parameters<NonNullable<Hooks["experimental.chat.system.transform"]>>[0], out)
     expect(out.system.length).toBe(0)
@@ -387,8 +359,9 @@ describe("tilde expansion", () => {
   test("expands ~/path", async () => {
     const home = process.env["HOME"]
     if (!home) return
-    const { hooks } = await createPlugin()
-    const msg = await hooks.tool!.add_dir.execute({ path: "~/", remember: false }, toolCtx())
-    expect(msg).toContain(home)
+    const { hooks, client } = await createPlugin()
+    await addDir(hooks, "~/")
+    const call = findCall(client.calls, "promptAsync", (a) => a.body.parts[0].text.includes("Added"))
+    expect(call!.args.body.parts[0].text).toContain(home)
   })
 })
