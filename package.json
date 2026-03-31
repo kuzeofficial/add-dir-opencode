@@ -1,7 +1,8 @@
 {
   "name": "opencode-add-dir",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Add working directories to your OpenCode session with auto-approved permissions",
+  "author": "Cristian Fonseca <cfonsecacomas@gmail.com>",
   "type": "module",
   "exports": {
     ".": {
