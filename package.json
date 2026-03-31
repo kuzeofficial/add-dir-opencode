@@ -1,6 +1,6 @@
 {
   "name": "opencode-add-dir",
-  "version": "1.0.1",
+  "version": "1.2.0",
   "description": "Add working directories to your OpenCode session with auto-approved permissions",
   "author": "Cristian Fonseca <cfonsecacomas@gmail.com>",
   "type": "module",
@@ -15,7 +15,12 @@
   "bin": {
     "opencode-add-dir-setup": "./bin/setup.mjs"
   },
-  "files": ["dist/", "bin/", "README.md", "LICENSE"],
+  "files": [
+    "dist/",
+    "bin/",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "build": "bun build ./src/index.ts --outdir ./dist --target node --format esm --external @opencode-ai/plugin && bun x tsc --emitDeclarationOnly",
     "deploy": "bun build ./src/plugin.ts --outfile ~/.config/opencode/plugins/add-dir.js --target node --format esm --external @opencode-ai/plugin",
@@ -23,7 +28,13 @@
     "typecheck": "bun x tsc --noEmit",
     "prepublishOnly": "bun run typecheck && bun test && bun run build"
   },
-  "keywords": ["opencode", "opencode-plugin", "add-dir", "working-directory", "permissions"],
+  "keywords": [
+    "opencode",
+    "opencode-plugin",
+    "add-dir",
+    "working-directory",
+    "permissions"
+  ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/kuzeofficial/add-dir-opencode.git"
