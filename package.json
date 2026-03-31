@@ -1,37 +1,35 @@
 {
   "name": "opencode-add-dir",
-  "version": "1.1.0",
-  "description": "OpenCode plugin to add external directories to session context",
+  "version": "0.1.0",
+  "description": "Add working directories to your OpenCode session with auto-approved permissions",
   "type": "module",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
-  "files": [
-    "dist",
-    "command",
-    "scripts",
-    "README.md"
-  ],
-  "scripts": {
-    "build": "tsc",
-    "prepublishOnly": "npm run build",
-    "postinstall": "node scripts/install.js"
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
   },
-  "dependencies": {
-    "@opencode-ai/plugin": "^1.0.0"
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "opencode-add-dir-setup": "./bin/setup.mjs"
+  },
+  "files": ["dist/", "bin/", "README.md", "LICENSE"],
+  "scripts": {
+    "build": "bun build ./src/index.ts --outdir ./dist --target node --format esm --external @opencode-ai/plugin && bun x tsc --emitDeclarationOnly",
+    "deploy": "bun build ./src/plugin.ts --outfile ~/.config/opencode/plugins/add-dir.js --target node --format esm --external @opencode-ai/plugin",
+    "test": "bun test",
+    "typecheck": "bun x tsc --noEmit",
+    "prepublishOnly": "bun run typecheck && bun test && bun run build"
+  },
+  "keywords": ["opencode", "opencode-plugin", "add-dir", "working-directory", "permissions"],
+  "license": "MIT",
+  "peerDependencies": {
+    "@opencode-ai/plugin": ">=1.0.0"
   },
   "devDependencies": {
-    "@types/node": "^20.0.0",
-    "typescript": "^5.0.0"
-  },
-  "peerDependencies": {
-    "@opencode-ai/plugin": "^1.0.0"
-  },
-  "keywords": [
-    "opencode",
-    "plugin",
-    "add-directory",
-    "context"
-  ],
-  "author": "Cristian Fonseca <cfonsecacomas@gmail.com>",
-  "license": "MIT"
+    "@opencode-ai/plugin": "^1.1.14",
+    "@types/bun": "latest",
+    "typescript": "^5.8.3"
+  }
 }
