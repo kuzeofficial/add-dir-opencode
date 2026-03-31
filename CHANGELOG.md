@@ -1,3 +1,10 @@
+## [1.3.1](https://github.com/kuzeofficial/add-dir-opencode/compare/v1.3.0...v1.3.1) (2026-03-31)
+
+
+### Bug Fixes
+
+* Add chore and docs commit types as patch release triggers ([792624a](https://github.com/kuzeofficial/add-dir-opencode/commit/792624a60a9d2fc9cd31deaba40ddcc1a1c3c9ff))
+
 # [1.3.0](https://github.com/kuzeofficial/add-dir-opencode/compare/v1.2.1...v1.3.0) (2026-03-31)
 
 
