@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "fs"
+import { readFileSync } from "fs"
 import { join } from "path"
 import type { DirEntry } from "./state.js"
 
@@ -9,7 +9,6 @@ export function collectAgentContext(dirs: Map<string, DirEntry>): string[] {
   for (const entry of dirs.values()) {
     for (const name of CONTEXT_FILES) {
       const fp = join(entry.path, name)
-      if (!existsSync(fp)) continue
       try {
         const content = readFileSync(fp, "utf-8").trim()
         if (content) sections.push(`# Context from ${fp}\n\n${content}`)
