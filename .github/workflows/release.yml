@@ -13,9 +13,6 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
-    outputs:
-      new_release: ${{ steps.semantic.outputs.new_release_published }}
-      version: ${{ steps.semantic.outputs.new_release_version }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -37,32 +34,26 @@ jobs:
 
       - run: bun run build
 
+      - name: Get version before release
+        run: echo "BEFORE=$(git tag --sort=-v:refname | head -1)" >> "$GITHUB_ENV"
+
       - name: Release
-        id: semantic
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: bun x semantic-release
 
-  publish:
-    needs: release
-    if: needs.release.outputs.new_release == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: main
+      - name: Check if new version was released
+        run: |
+          git fetch --tags
+          AFTER=$(git tag --sort=-v:refname | head -1)
+          if [ "$BEFORE" != "$AFTER" ]; then
+            echo "New release: $AFTER"
+            echo "RELEASED=true" >> "$GITHUB_ENV"
+          fi
 
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "24"
-          registry-url: https://registry.npmjs.org
-
-      - run: bun install --frozen-lockfile
-
-      - run: bun run build
-
-      - run: npm publish --provenance --access public
+      - name: Publish to npm
+        if: env.RELEASED == 'true'
+        run: |
+          git checkout main
+          bun run build
+          npm publish --provenance --access public
