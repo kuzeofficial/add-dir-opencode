@@ -24,6 +24,10 @@
     "prepublishOnly": "bun run typecheck && bun test && bun run build"
   },
   "keywords": ["opencode", "opencode-plugin", "add-dir", "working-directory", "permissions"],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kuzeofficial/add-dir-opencode.git"
+  },
   "license": "MIT",
   "peerDependencies": {
     "@opencode-ai/plugin": ">=1.0.0"
