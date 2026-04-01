@@ -10,23 +10,6 @@ export function permissionGlob(dirPath: string) {
   return join(dirPath, "*")
 }
 
-function sendPrompt(sdk: SDK, sessionID: string, text: string, tools?: Record<string, boolean>): Promise<void> {
-  const body: PromptBody = { noReply: true, ...(tools && { tools }), parts: [{ type: "text", text }] }
-  return (sdk.session.promptAsync as Function)({ path: { id: sessionID }, body })
-    ?.then?.(() => {})
-    ?.catch?.(() => {})
-    ?? Promise.resolve()
-}
-
-export function notify(sdk: SDK, sessionID: string, text: string) {
-  sendPrompt(sdk, sessionID, text)
-}
-
-export function grantSessionAsync(sdk: SDK, sessionID: string, text: string) {
-  grantedSessions.add(sessionID)
-  sendPrompt(sdk, sessionID, text, { external_directory: true })
-}
-
 export async function grantSession(sdk: SDK, sessionID: string, text: string) {
   if (grantedSessions.has(sessionID)) return
   grantedSessions.add(sessionID)
@@ -63,7 +46,7 @@ export async function autoApprovePermission(sdk: SDK, props: PermissionEvent, di
     .catch(() => {})
 }
 
-function extractPath(tool: string, args: ToolArgs): string {
+export function extractPath(tool: string, args: ToolArgs): string {
   if (!args) return ""
   if (tool === "bash") return args.workdir || args.command || ""
   return args.filePath || args.path || args.pattern || ""

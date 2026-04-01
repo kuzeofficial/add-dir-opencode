@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs"
+import { existsSync, mkdirSync, readFileSync, writeFileSync, statSync } from "fs"
 import { join } from "path"
 
 function stateDir() {
@@ -9,6 +9,8 @@ function stateDir() {
   )
 }
 
+const dirsFile = () => join(stateDir(), "directories.json")
+
 export interface DirEntry {
   path: string
   persist: boolean
@@ -18,9 +20,9 @@ export function expandHome(p: string) {
   return p.startsWith("~/") ? (process.env["HOME"] || "~") + p.slice(1) : p
 }
 
-export function loadDirs(): Map<string, DirEntry> {
+function loadDirs(): Map<string, DirEntry> {
   const dirs = new Map<string, DirEntry>()
-  const file = join(stateDir(), "directories.json")
+  const file = dirsFile()
   if (!existsSync(file)) return dirs
   try {
     for (const p of JSON.parse(readFileSync(file, "utf-8")) as string[])
@@ -29,11 +31,26 @@ export function loadDirs(): Map<string, DirEntry> {
   return dirs
 }
 
-export function saveDirs(dirs: Map<string, DirEntry>) {
-  const list = [...dirs.values()].filter((d) => d.persist).map((d) => d.path)
-  const dir = stateDir()
-  if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
-  writeFileSync(join(dir, "directories.json"), JSON.stringify(list, null, 2))
+let cachedDirs: Map<string, DirEntry> | undefined
+let cachedMtime = 0
+
+export function freshDirs(): Map<string, DirEntry> {
+  const file = dirsFile()
+  try {
+    const mtime = statSync(file).mtimeMs
+    if (cachedDirs && mtime === cachedMtime) return cachedDirs
+    cachedMtime = mtime
+    cachedDirs = loadDirs()
+    return cachedDirs
+  } catch {
+    if (!cachedDirs) cachedDirs = new Map()
+    return cachedDirs
+  }
+}
+
+export function invalidateCache() {
+  cachedDirs = undefined
+  cachedMtime = 0
 }
 
 export function isChildOf(parent: string, child: string) {
@@ -105,6 +122,6 @@ export function ensureTuiConfig() {
     config.plugin = [...plugins, PKG]
     writeFileSync(filePath, JSON.stringify(config, null, 2) + "\n")
   } catch {
-    // Non-critical — TUI dialog just won't be available until manually configured
+    // Non-critical
   }
 }

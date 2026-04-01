@@ -8,10 +8,6 @@ export interface PromptBody {
   parts: Array<{ type: "text"; text: string }>
 }
 
-export interface PermissionReplyBody {
-  response: "once" | "always" | "reject"
-}
-
 export interface PermissionEvent {
   id: string
   sessionID: string

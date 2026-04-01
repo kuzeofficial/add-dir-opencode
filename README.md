@@ -6,12 +6,8 @@ When you need an agent to read, edit, or search files outside the current projec
 
 ## Quick Start
 
-Add to your `opencode.json`:
-
-```json
-{
-  "plugin": ["opencode-add-dir"]
-}
+```bash
+opencode plugin opencode-add-dir -g
 ```
 
 Restart OpenCode. Done.
@@ -20,15 +16,13 @@ Restart OpenCode. Done.
 <summary>Alternative: setup CLI</summary>
 
 ```bash
-bunx opencode-add-dir-setup
+npx opencode-add-dir-setup
 ```
-
-Automatically adds the plugin to your global `opencode.json`.
 
 </details>
 
 <details>
-<summary>Alternative: local file</summary>
+<summary>Alternative: local development</summary>
 
 ```bash
 git clone https://github.com/kuzeofficial/add-dir-opencode.git
@@ -36,77 +30,78 @@ cd add-dir-opencode
 bun install && bun run deploy
 ```
 
-Bundles to `~/.config/opencode/plugins/add-dir.js`.
+Add the local path to both configs:
+
+```jsonc
+// ~/.config/opencode/opencode.json
+{ "plugin": ["/path/to/add-dir-opencode"] }
+
+// ~/.config/opencode/tui.json
+{ "plugin": ["/path/to/add-dir-opencode"] }
+```
 
 </details>
 
 ## Commands
 
-```
-/add-dir /path/to/directory              # Add for this session
-/add-dir /path/to/directory --remember   # Persist across sessions
-/list-dir                                # Show added directories
-/remove-dir /path/to/directory           # Remove a directory
-```
+All commands are interactive TUI dialogs — type the command and select from autocomplete.
+
+| Command | Dialog | Description |
+|---------|--------|-------------|
+| `/add-dir` | Text input + remember checkbox | Add a working directory. Toggle `[x] Remember` with tab to persist across sessions. |
+| `/list-dir` | Alert | Shows all added directories. |
+| `/remove-dir` | Select list + confirm | Pick a directory to remove, then confirm. |
 
 ## How It Works
 
-The plugin uses a layered approach to handle permissions across all sessions, including subagents:
+The plugin has two parts: a **TUI plugin** for the interactive dialogs and a **server plugin** for silent permission handling.
 
-| Layer | When | Scope |
-|-------|------|-------|
-| **Config hook** | Startup | Injects `external_directory: "allow"` rules for persisted dirs into all agents |
-| **Session permission** | `/add-dir` | Sets `external_directory: true` on the current session |
-| **tool.execute.before** | Every file tool | Detects subagent sessions accessing added dirs, grants permission before execution |
-| **Event auto-approve** | Permission popup | Catches any remaining `external_directory` requests and auto-approves via SDK |
+### TUI Plugin
+
+Handles all three slash commands via dialogs. Writes persisted directories to `~/.local/share/opencode/add-dir/directories.json` and grants session permissions via the SDK.
+
+### Server Plugin
+
+Runs in the background — no commands, only hooks:
+
+| Hook | What it does |
+|------|-------------|
+| `config` | Injects `external_directory: "allow"` permission rules for persisted dirs at startup |
+| `tool.execute.before` | Auto-grants permissions when subagents access added directories |
+| `event` | Auto-approves any remaining permission popups for added directories |
+| `system.transform` | Injects `AGENTS.md` / `CLAUDE.md` content from added directories into the system prompt |
 
 ### Context Injection
 
 If an added directory contains `AGENTS.md`, `CLAUDE.md`, or `.agents/AGENTS.md`, the content is automatically injected into the system prompt.
 
-## Persistence
-
-Directories added with `--remember` are stored in:
-
-```
-~/.local/share/opencode/add-dir/directories.json
-```
-
-These are loaded at startup and injected into agent permission rules via the config hook.
-
 ## Development
 
 ```bash
 bun install
-bun test           # 33 tests
+bun test           # Run tests
 bun run typecheck  # Type check
 bun run build      # Build npm package
-bun run deploy     # Bundle to ~/.config/opencode/plugins/
+bun run deploy     # Build server + TUI locally
 ```
 
 ### Project Structure
 
 ```
 src/
-├── index.ts        # Entry point (default export)
-├── plugin.ts       # Hooks + commands
-├── state.ts        # Persistence + path utils
-├── validate.ts     # Directory validation
-├── permissions.ts  # Session grants + auto-approve
-├── context.ts      # AGENTS.md injection
-└── types.ts        # Shared type definitions
-```
-
-## Debugging
-
-```bash
-opencode --print-logs 2>debug.log
-grep "\[add-dir\]" debug.log
+├── index.ts          # Server plugin entry
+├── plugin.ts         # Server hooks (permissions, context injection)
+├── tui-plugin.tsx    # TUI plugin (dialogs for add/list/remove)
+├── state.ts          # Persistence, path utils, tui.json auto-config
+├── validate.ts       # Directory validation
+├── permissions.ts    # Session grants + auto-approve
+├── context.ts        # AGENTS.md injection
+└── types.ts          # Shared type definitions
 ```
 
 ## Limitations
 
-- Directories added mid-session (without `--remember`) rely on session-level permissions and the event hook auto-approve. The first access by a subagent may briefly show a permission popup before auto-dismissing.
+- Directories added without "Remember" rely on session-level permissions. The first access by a subagent may briefly show a permission popup before auto-dismissing.
 - The `permission.ask` plugin hook is defined in the OpenCode SDK but [not invoked](https://github.com/sst/opencode/blob/main/packages/opencode/src/permission/index.ts) in the source — this plugin works around it using `tool.execute.before` and event-based auto-approval.
 
 ## License
