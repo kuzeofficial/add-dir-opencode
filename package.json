@@ -27,7 +27,8 @@
   },
   "files": [
     "dist/",
-    "bin/",
+    "bin/ensure-tui.mjs",
+    "bin/setup.mjs",
     "README.md",
     "LICENSE"
   ],
@@ -35,6 +36,7 @@
     "build": "bun run build:server && bun run build:tui && bun x tsc --emitDeclarationOnly",
     "build:server": "bun build ./src/index.ts --outdir ./dist --target node --format esm --external @opencode-ai/plugin",
     "build:tui": "cp ./src/tui-plugin.tsx ./dist/tui.tsx",
+    "postinstall": "node ./bin/ensure-tui.mjs",
     "deploy": "bun run build:server && bun run build:tui",
     "test": "bun test",
     "typecheck": "bun x tsc --noEmit",

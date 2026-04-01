@@ -2,7 +2,7 @@ import type { TuiPlugin, TuiPluginApi, TuiPluginModule } from "@opencode-ai/plug
 import { createSignal } from "solid-js"
 
 const PLUGIN_ID = "opencode-add-dir"
-const COMMAND_NAME = "add-dir"
+const INTERNAL_COMMAND = "__adddir"
 
 function activeSessionID(api: TuiPluginApi): string | undefined {
   const route = api.route.current
@@ -33,7 +33,7 @@ async function executeAddDir(api: TuiPluginApi, dirPath: string) {
   // prevent the command template from reaching the LLM. This rejection is expected.
   api.client.session.command({
     sessionID,
-    command: COMMAND_NAME,
+    command: INTERNAL_COMMAND,
     arguments: dirPath,
   }).catch(() => {})
 }
@@ -96,7 +96,7 @@ const tui: TuiPlugin = async (api) => {
       value: "add-dir.dialog",
       description: "Add a working directory to the session",
       category: "Directories",
-      slash: { name: COMMAND_NAME },
+      slash: { name: "add-dir" },
       onSelect: () => showDialog(api),
     },
   ])

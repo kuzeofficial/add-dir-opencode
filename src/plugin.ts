@@ -7,12 +7,12 @@ import type { SDK, PermissionEvent, ToolArgs } from "./types.js"
 
 const SENTINEL = Object.assign(new Error("__ADD_DIR_HANDLED__"), { stack: "" })
 
+ensureTuiConfig()
+
 export const AddDirPlugin: Plugin = async ({ client, worktree, directory }) => {
   const root = worktree || directory
   const dirs = loadDirs()
   const sdk: SDK = client
-
-  ensureTuiConfig()
 
   function add(dirPath: string, persist: boolean): { ok: boolean; message: string } {
     const result = validateDir(dirPath, root, [...dirs.values()].map((d) => d.path))
@@ -49,7 +49,7 @@ export const AddDirPlugin: Plugin = async ({ client, worktree, directory }) => {
   }
 
   const commands: Record<string, (args: string, sid: string) => void> = {
-    "add-dir": (args, sid) => handleAdd(args, sid),
+    "__adddir": (args, sid) => handleAdd(args, sid),
     "list-dir": (_, sid) => notify(sdk, sid, list()),
     "remove-dir": (args, sid) => notify(sdk, sid, remove(args)),
   }
@@ -58,7 +58,7 @@ export const AddDirPlugin: Plugin = async ({ client, worktree, directory }) => {
     config: async (cfg: Config) => {
       (cfg as Record<string, unknown>).command ??= {}
       const cmd = (cfg as Record<string, unknown>).command as Record<string, { template: string; description: string }>
-      cmd["add-dir"] = { template: "/add-dir", description: "Add a working directory" }
+      cmd["__adddir"] = { template: "/__adddir", description: "Internal: add a working directory" }
       cmd["list-dir"] = { template: "/list-dir", description: "List added working directories" }
       cmd["remove-dir"] = { template: "/remove-dir", description: "Remove a working directory" }
       if (!dirs.size) return

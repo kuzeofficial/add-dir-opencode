@@ -76,7 +76,7 @@ async function runCommand(hooks: Hooks, command: string, args: string, sessionID
 }
 
 async function addDir(hooks: Hooks, path: string, flags = "") {
-  await runCommand(hooks, "add-dir", flags ? `${path} ${flags}` : path)
+  await runCommand(hooks, "__adddir", flags ? `${path} ${flags}` : path)
 }
 
 beforeEach(() => {
@@ -96,7 +96,7 @@ describe("config", () => {
     const cfg = {} as Config
     await hooks.config!(cfg)
     const cmd = (cfg as Record<string, unknown>).command as Record<string, { template: string }>
-    expect(cmd["add-dir"].template).toBe("/add-dir")
+    expect(cmd["__adddir"].template).toBe("/__adddir")
     expect(cmd["list-dir"].template).toBe("/list-dir")
     expect(cmd["remove-dir"].template).toBe("/remove-dir")
   })
@@ -184,7 +184,7 @@ describe("/add-dir command", () => {
 
   test("throws sentinel", async () => {
     const { hooks } = await createPlugin()
-    await expect(hooks["command.execute.before"]!({ command: "add-dir", sessionID: "s1", arguments: EXTERNAL }, { parts: [] })).rejects.toThrow()
+    await expect(hooks["command.execute.before"]!({ command: "__adddir", sessionID: "s1", arguments: EXTERNAL }, { parts: [] })).rejects.toThrow()
   })
 })
 
