@@ -1,3 +1,5 @@
+## [1.7.1](https://github.com/kuzeofficial/add-dir-opencode/compare/v1.7.0...v1.7.1) (2026-04-01)
+
 # [1.7.0](https://github.com/kuzeofficial/add-dir-opencode/compare/v1.6.0...v1.7.0) (2026-04-01)
 
 
