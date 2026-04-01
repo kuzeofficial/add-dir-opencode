@@ -1,3 +1,10 @@
+# [1.6.0](https://github.com/kuzeofficial/add-dir-opencode/compare/v1.5.0...v1.6.0) (2026-04-01)
+
+
+### Features
+
+* move all commands to TUI dialogs, remove dead code, expand test coverage ([678cbf5](https://github.com/kuzeofficial/add-dir-opencode/commit/678cbf5b79d3ca4bf680ed55e360946f213950cb))
+
 # [1.5.0](https://github.com/kuzeofficial/add-dir-opencode/compare/v1.4.0...v1.5.0) (2026-04-01)
 
 
