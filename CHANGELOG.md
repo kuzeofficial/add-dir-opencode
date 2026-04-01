@@ -1,3 +1,10 @@
+# [1.7.0](https://github.com/kuzeofficial/add-dir-opencode/compare/v1.6.0...v1.7.0) (2026-04-01)
+
+
+### Features
+
+* optimize token usage, minify bundle, remove dead code ([4486727](https://github.com/kuzeofficial/add-dir-opencode/commit/448672767235f951d8a44161b4fb11e46ef88fde))
+
 # [1.6.0](https://github.com/kuzeofficial/add-dir-opencode/compare/v1.5.0...v1.6.0) (2026-04-01)
 
 
