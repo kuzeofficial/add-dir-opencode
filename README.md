@@ -60,11 +60,7 @@ Runs in the background — no commands, only hooks:
 | `config` | Injects `external_directory: "allow"` permission rules for persisted dirs at startup |
 | `tool.execute.before` | Auto-grants permissions when subagents access added directories |
 | `event` | Auto-approves any remaining permission popups for added directories |
-| `system.transform` | Injects `AGENTS.md` / `CLAUDE.md` content from added directories into the system prompt |
-
-### Context Injection
-
-If an added directory contains `AGENTS.md`, `CLAUDE.md`, or `.agents/AGENTS.md`, the content is automatically injected into the system prompt.
+| `system.transform` | Injects added directory paths into the system prompt so the LLM knows about them |
 
 ## Development
 
@@ -84,16 +80,10 @@ src/
 ├── plugin.ts         # Server hooks (permissions, context injection)
 ├── tui-plugin.tsx    # TUI plugin (dialogs for add/list/remove)
 ├── state.ts          # Persistence, path utils, tui.json auto-config
-├── validate.ts       # Directory validation
 ├── permissions.ts    # Session grants + auto-approve
-├── context.ts        # AGENTS.md injection
+├── context.ts        # System prompt injection
 └── types.ts          # Shared type definitions
 ```
-
-## Limitations
-
-- Directories added without "Remember" rely on session-level permissions. The first access by a subagent may briefly show a permission popup before auto-dismissing.
-- The `permission.ask` plugin hook is defined in the OpenCode SDK but [not invoked](https://github.com/sst/opencode/blob/main/packages/opencode/src/permission/index.ts) in the source — this plugin works around it using `tool.execute.before` and event-based auto-approval.
 
 ## License
 
