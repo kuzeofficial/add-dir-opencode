@@ -22,12 +22,8 @@
     "server",
     "tui"
   ],
-  "bin": {
-    "opencode-add-dir-setup": "./bin/setup.mjs"
-  },
   "files": [
     "dist/",
-    "bin/setup.mjs",
     "README.md",
     "LICENSE"
   ],

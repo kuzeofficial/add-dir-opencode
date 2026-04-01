@@ -13,15 +13,6 @@ opencode plugin opencode-add-dir -g
 Restart OpenCode. Done.
 
 <details>
-<summary>Alternative: setup CLI</summary>
-
-```bash
-npx opencode-add-dir-setup
-```
-
-</details>
-
-<details>
 <summary>Alternative: local development</summary>
 
 ```bash
