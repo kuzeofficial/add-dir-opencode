@@ -46,3 +46,65 @@ export function matchesDirs(dirs: Map<string, DirEntry>, filepath: string) {
   }
   return false
 }
+
+const PKG = "opencode-add-dir"
+
+function stripJsonComments(text: string): string {
+  let result = ""
+  let inString = false
+  let escape = false
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i]
+    if (escape) { result += ch; escape = false; continue }
+    if (ch === "\\" && inString) { result += ch; escape = true; continue }
+    if (ch === '"') { inString = !inString; result += ch; continue }
+    if (inString) { result += ch; continue }
+    if (ch === "/" && text[i + 1] === "/") { while (i < text.length && text[i] !== "\n") i++; continue }
+    if (ch === "/" && text[i + 1] === "*") { i += 2; while (i < text.length && !(text[i] === "*" && text[i + 1] === "/")) i++; i++; continue }
+    result += ch
+  }
+  return result
+}
+
+function configDir() {
+  return join(
+    process.env["XDG_CONFIG_HOME"] || join(process.env["HOME"] || "~", ".config"),
+    "opencode",
+  )
+}
+
+function findTuiConfig(): string {
+  const dir = configDir()
+  for (const name of ["tui.jsonc", "tui.json"]) {
+    const p = join(dir, name)
+    if (existsSync(p)) return p
+  }
+  return join(dir, "tui.json")
+}
+
+export function ensureTuiConfig() {
+  try {
+    const dir = configDir()
+    if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
+
+    const filePath = findTuiConfig()
+    let config: Record<string, unknown> = {}
+
+    if (existsSync(filePath)) {
+      config = JSON.parse(stripJsonComments(readFileSync(filePath, "utf-8")))
+    }
+
+    const plugins = (config.plugin ?? []) as unknown[]
+    const hasEntry = plugins.some((p) => {
+      const name = Array.isArray(p) ? p[0] : p
+      return name === PKG || (typeof name === "string" && name.startsWith(PKG + "@"))
+    })
+
+    if (hasEntry) return
+
+    config.plugin = [...plugins, PKG]
+    writeFileSync(filePath, JSON.stringify(config, null, 2) + "\n")
+  } catch {
+    // Non-critical — TUI dialog just won't be available until manually configured
+  }
+}

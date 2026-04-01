@@ -8,10 +8,17 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./server": {
+      "import": "./dist/index.js"
+    },
+    "./tui": {
+      "import": "./dist/tui.tsx"
     }
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "oc-plugin": ["server", "tui"],
   "bin": {
     "opencode-add-dir-setup": "./bin/setup.mjs"
   },
@@ -22,8 +29,10 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "bun build ./src/index.ts --outdir ./dist --target node --format esm --external @opencode-ai/plugin && bun x tsc --emitDeclarationOnly",
-    "deploy": "bun build ./src/plugin.ts --outfile ~/.config/opencode/plugins/add-dir.js --target node --format esm --external @opencode-ai/plugin",
+    "build": "bun run build:server && bun run build:tui && bun x tsc --emitDeclarationOnly",
+    "build:server": "bun build ./src/index.ts --outdir ./dist --target node --format esm --external @opencode-ai/plugin",
+    "build:tui": "cp ./src/tui-plugin.tsx ./dist/tui.tsx",
+    "deploy": "bun run build:server && bun run build:tui",
     "test": "bun test",
     "typecheck": "bun x tsc --noEmit",
     "prepublishOnly": "bun run typecheck && bun test && bun run build"
@@ -41,10 +50,22 @@
   },
   "license": "MIT",
   "peerDependencies": {
-    "@opencode-ai/plugin": ">=1.0.0"
+    "@opencode-ai/plugin": ">=1.0.0",
+    "@opentui/core": ">=0.1.92",
+    "@opentui/solid": ">=0.1.92"
+  },
+  "peerDependenciesMeta": {
+    "@opentui/core": {
+      "optional": true
+    },
+    "@opentui/solid": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@opencode-ai/plugin": "^1.1.14",
+    "@opentui/core": "0.1.95",
+    "@opentui/solid": "0.1.95",
     "@semantic-release/changelog": "^6.0.3",
     "@semantic-release/commit-analyzer": "^13.0.1",
     "@semantic-release/git": "^10.0.1",
@@ -53,6 +74,7 @@
     "@semantic-release/release-notes-generator": "^14.1.0",
     "@types/bun": "latest",
     "semantic-release": "^25.0.3",
+    "solid-js": "^1.9.12",
     "typescript": "^5.8.3"
   }
 }

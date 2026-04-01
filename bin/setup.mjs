@@ -9,17 +9,7 @@ const isRemove = args.includes("--remove")
 
 function configDir() {
   if (process.env.XDG_CONFIG_HOME) return join(process.env.XDG_CONFIG_HOME, "opencode")
-  if (process.platform === "darwin") return join(homedir(), ".config", "opencode")
   return join(homedir(), ".config", "opencode")
-}
-
-function findConfig() {
-  const dir = configDir()
-  for (const name of ["opencode.jsonc", "opencode.json"]) {
-    const p = join(dir, name)
-    if (existsSync(p)) return p
-  }
-  return join(dir, "opencode.json")
 }
 
 function stripJsonComments(text) {
@@ -39,48 +29,73 @@ function stripJsonComments(text) {
   return result
 }
 
-function run() {
-  const configPath = findConfig()
-  const dir = configDir()
-
-  let config = {}
-  if (existsSync(configPath)) {
-    const raw = readFileSync(configPath, "utf-8")
-    config = JSON.parse(stripJsonComments(raw))
-  } else {
-    if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
+function findConfigFile(dir, baseName) {
+  for (const ext of [".jsonc", ".json"]) {
+    const p = join(dir, baseName + ext)
+    if (existsSync(p)) return p
   }
+  return join(dir, baseName + ".json")
+}
 
-  config.plugin = config.plugin || []
-  const has = config.plugin.some((p) => {
+function readConfig(filePath) {
+  if (!existsSync(filePath)) return {}
+  return JSON.parse(stripJsonComments(readFileSync(filePath, "utf-8")))
+}
+
+function hasPlugin(plugins) {
+  return (plugins || []).some((p) => {
     const name = Array.isArray(p) ? p[0] : p
     return name === PKG || name.startsWith(PKG + "@")
   })
+}
+
+function withoutPlugin(plugins) {
+  return (plugins || []).filter((p) => {
+    const name = Array.isArray(p) ? p[0] : p
+    return name !== PKG && !name.startsWith(PKG + "@")
+  })
+}
+
+function patchConfig(filePath, config, schemaUrl) {
+  config.plugin = config.plugin || []
 
   if (isRemove) {
-    if (!has) {
-      console.log(`${PKG} is not in ${configPath}`)
-      return
-    }
-    config.plugin = config.plugin.filter((p) => {
-      const name = Array.isArray(p) ? p[0] : p
-      return name !== PKG && !name.startsWith(PKG + "@")
-    })
-    writeFileSync(configPath, JSON.stringify(config, null, 2) + "\n")
-    console.log(`Removed ${PKG} from ${configPath}`)
-    return
+    if (!hasPlugin(config.plugin)) return false
+    config.plugin = withoutPlugin(config.plugin)
+    writeFileSync(filePath, JSON.stringify(config, null, 2) + "\n")
+    return true
   }
 
-  if (has) {
-    console.log(`${PKG} is already in ${configPath}`)
-    return
-  }
-
+  if (hasPlugin(config.plugin)) return false
   config.plugin.push(PKG)
-  if (!config.$schema) config.$schema = "https://opencode.ai/config.json"
-  writeFileSync(configPath, JSON.stringify(config, null, 2) + "\n")
-  console.log(`Added ${PKG} to ${configPath}`)
-  console.log("Restart OpenCode to activate the plugin.")
+  if (schemaUrl && !config.$schema) config.$schema = schemaUrl
+  writeFileSync(filePath, JSON.stringify(config, null, 2) + "\n")
+  return true
+}
+
+function run() {
+  const dir = configDir()
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
+
+  const serverPath = findConfigFile(dir, "opencode")
+  const tuiPath = findConfigFile(dir, "tui")
+
+  const serverConfig = readConfig(serverPath)
+  const tuiConfig = readConfig(tuiPath)
+
+  const verb = isRemove ? "Removed" : "Added"
+  const serverChanged = patchConfig(serverPath, serverConfig, "https://opencode.ai/config.json")
+  const tuiChanged = patchConfig(tuiPath, tuiConfig)
+
+  if (serverChanged) console.log(`${verb} ${PKG} in ${serverPath}`)
+  else console.log(`${PKG} already ${isRemove ? "absent from" : "in"} ${serverPath}`)
+
+  if (tuiChanged) console.log(`${verb} ${PKG} in ${tuiPath}`)
+  else console.log(`${PKG} already ${isRemove ? "absent from" : "in"} ${tuiPath}`)
+
+  if (serverChanged || tuiChanged) {
+    console.log("Restart OpenCode to activate the plugin.")
+  }
 }
 
 run()

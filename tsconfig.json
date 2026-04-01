@@ -13,7 +13,9 @@
     "declaration": true,
     "isolatedModules": true,
     "noUnusedLocals": true,
-    "noUnusedParameters": true
+    "noUnusedParameters": true,
+    "jsx": "preserve",
+    "jsxImportSource": "@opentui/solid"
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist", "test"]

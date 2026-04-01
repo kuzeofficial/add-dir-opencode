@@ -1,5 +1,5 @@
 import type { Plugin, Config } from "@opencode-ai/plugin"
-import { loadDirs, saveDirs } from "./state.js"
+import { loadDirs, saveDirs, ensureTuiConfig } from "./state.js"
 import { validateDir } from "./validate.js"
 import { permissionGlob, grantSession, grantSessionAsync, notify, shouldGrantBeforeTool, autoApprovePermission } from "./permissions.js"
 import { collectAgentContext } from "./context.js"
@@ -7,16 +7,12 @@ import type { SDK, PermissionEvent, ToolArgs } from "./types.js"
 
 const SENTINEL = Object.assign(new Error("__ADD_DIR_HANDLED__"), { stack: "" })
 
-function log(msg: string, data?: unknown) {
-  console.error(`[add-dir] ${msg}`, data !== undefined ? JSON.stringify(data) : "")
-}
-
 export const AddDirPlugin: Plugin = async ({ client, worktree, directory }) => {
   const root = worktree || directory
   const dirs = loadDirs()
   const sdk: SDK = client
 
-  log("init", { root, persistedDirs: [...dirs.keys()] })
+  ensureTuiConfig()
 
   function add(dirPath: string, persist: boolean): { ok: boolean; message: string } {
     const result = validateDir(dirPath, root, [...dirs.values()].map((d) => d.path))
@@ -53,9 +49,9 @@ export const AddDirPlugin: Plugin = async ({ client, worktree, directory }) => {
   }
 
   const commands: Record<string, (args: string, sid: string) => void> = {
-    "add-dir": (args, sid) => { log("add-dir", { args, sid }); handleAdd(args, sid) },
-    "list-dir": (_, sid) => { log("list-dir", { sid }); notify(sdk, sid, list()) },
-    "remove-dir": (args, sid) => { log("remove-dir", { args, sid }); notify(sdk, sid, remove(args)) },
+    "add-dir": (args, sid) => handleAdd(args, sid),
+    "list-dir": (_, sid) => notify(sdk, sid, list()),
+    "remove-dir": (args, sid) => notify(sdk, sid, remove(args)),
   }
 
   return {
