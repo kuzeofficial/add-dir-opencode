@@ -1,3 +1,10 @@
+# [1.4.0](https://github.com/kuzeofficial/add-dir-opencode/compare/v1.3.1...v1.4.0) (2026-04-01)
+
+
+### Features
+
+* add TUI dialog for /add-dir slash command ([82a04eb](https://github.com/kuzeofficial/add-dir-opencode/commit/82a04eb8047cba131e5e653dc23e446532e3fe2f))
+
 ## [1.3.1](https://github.com/kuzeofficial/add-dir-opencode/compare/v1.3.0...v1.3.1) (2026-03-31)
 
 
