@@ -1,3 +1,10 @@
+# [1.5.0](https://github.com/kuzeofficial/add-dir-opencode/compare/v1.4.0...v1.5.0) (2026-04-01)
+
+
+### Features
+
+* fix duplicate autocomplete and single-restart TUI setup ([804a4d8](https://github.com/kuzeofficial/add-dir-opencode/commit/804a4d8784b11336354ceb11817ec60508bfdc2a))
+
 # [1.4.0](https://github.com/kuzeofficial/add-dir-opencode/compare/v1.3.1...v1.4.0) (2026-04-01)
 
 
