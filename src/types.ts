@@ -2,12 +2,6 @@ import type { PluginInput } from "@opencode-ai/plugin"
 
 export type SDK = PluginInput["client"]
 
-export interface PromptBody {
-  noReply: true
-  tools?: Record<string, boolean>
-  parts: Array<{ type: "text"; text: string }>
-}
-
 export interface PermissionEvent {
   id: string
   sessionID: string

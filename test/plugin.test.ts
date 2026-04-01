@@ -5,7 +5,7 @@ import { tmpdir } from "os"
 import type { Config, Hooks, PluginInput } from "@opencode-ai/plugin"
 import { AddDirPlugin } from "../src/plugin"
 import { invalidateCache, expandHome, freshDirs, isChildOf, matchesDirs } from "../src/state"
-import { extractPath, shouldGrantBeforeTool, permissionGlob } from "../src/permissions"
+import { extractPath, shouldGrantBeforeTool, permissionGlob, resetGrantedSessions } from "../src/permissions"
 import { collectAgentContext } from "../src/context"
 import type { PermissionEvent, ToolArgs } from "../src/types"
 import type { DirEntry } from "../src/state"
@@ -53,14 +53,17 @@ function findPermReplyCall(calls: Call[]) {
   return calls.find((c): c is Extract<Call, { method: "permReply" }> => c.method === "permReply")
 }
 
-function persistDir(dirPath: string) {
-  const stateDir = join(process.env["XDG_DATA_HOME"]!, "opencode", "add-dir")
-  const file = join(stateDir, "directories.json")
-  mkdirSync(stateDir, { recursive: true })
+function writeToStateFile(filename: string, dirPath: string) {
+  const dir = join(process.env["XDG_DATA_HOME"]!, "opencode", "add-dir")
+  const file = join(dir, filename)
+  mkdirSync(dir, { recursive: true })
   const existing = existsSync(file) ? JSON.parse(readFileSync(file, "utf-8")) as string[] : []
   if (!existing.includes(dirPath)) writeFileSync(file, JSON.stringify([...existing, dirPath], null, 2))
   invalidateCache()
 }
+
+function persistDir(dirPath: string) { writeToStateFile("directories.json", dirPath) }
+function sessionDir(dirPath: string) { writeToStateFile("session-dirs.json", dirPath) }
 
 async function createPlugin(client = mockClient()) {
   const input: PluginInput = {
@@ -99,6 +102,7 @@ afterEach(() => {
   rmSync(TMP, { recursive: true, force: true })
   delete process.env["XDG_DATA_HOME"]
   invalidateCache()
+  resetGrantedSessions()
 })
 
 // ── state.ts ──
@@ -183,6 +187,25 @@ describe("freshDirs", () => {
     expect(a).not.toBe(b)
     expect(b.has(EXTERNAL)).toBe(true)
   })
+
+  test("merges session dirs from session-dirs.json", () => {
+    const sessionDir2 = join(TMP, "session-ext")
+    mkdirSync(sessionDir2, { recursive: true })
+    persistDir(EXTERNAL)
+    sessionDir(sessionDir2)
+    const dirs = freshDirs()
+    expect(dirs.has(EXTERNAL)).toBe(true)
+    expect(dirs.get(EXTERNAL)!.persist).toBe(true)
+    expect(dirs.has(sessionDir2)).toBe(true)
+    expect(dirs.get(sessionDir2)!.persist).toBe(false)
+  })
+
+  test("persisted entry takes priority over session entry for same path", () => {
+    persistDir(EXTERNAL)
+    sessionDir(EXTERNAL)
+    const dirs = freshDirs()
+    expect(dirs.get(EXTERNAL)!.persist).toBe(true)
+  })
 })
 
 // ── permissions.ts ──
@@ -250,71 +273,89 @@ describe("shouldGrantBeforeTool", () => {
 // ── context.ts ──
 
 describe("collectAgentContext", () => {
-  test("collects AGENTS.md", () => {
-    const dir = join(TMP, "ctx-agents")
-    mkdirSync(dir, { recursive: true })
-    writeFileSync(join(dir, "AGENTS.md"), "# Agent rules")
-    const dirs = new Map<string, DirEntry>([[dir, { path: dir, persist: true }]])
-    const result = collectAgentContext(dirs)
-    expect(result.length).toBe(1)
-    expect(result[0]).toContain("Agent rules")
-    expect(result[0]).toContain("Context from")
-  })
-
-  test("collects CLAUDE.md", () => {
-    const dir = join(TMP, "ctx-claude")
-    mkdirSync(dir, { recursive: true })
-    writeFileSync(join(dir, "CLAUDE.md"), "# Claude rules")
-    const dirs = new Map<string, DirEntry>([[dir, { path: dir, persist: true }]])
-    const result = collectAgentContext(dirs)
-    expect(result.length).toBe(1)
-    expect(result[0]).toContain("Claude rules")
-  })
-
-  test("collects .agents/AGENTS.md", () => {
-    const dir = join(TMP, "ctx-dotagents")
-    mkdirSync(join(dir, ".agents"), { recursive: true })
-    writeFileSync(join(dir, ".agents", "AGENTS.md"), "# Nested rules")
-    const dirs = new Map<string, DirEntry>([[dir, { path: dir, persist: true }]])
-    const result = collectAgentContext(dirs)
-    expect(result.length).toBe(1)
-    expect(result[0]).toContain("Nested rules")
-  })
-
-  test("collects multiple context files from same dir", () => {
-    const dir = join(TMP, "ctx-multi")
-    mkdirSync(dir, { recursive: true })
-    writeFileSync(join(dir, "AGENTS.md"), "# A")
-    writeFileSync(join(dir, "CLAUDE.md"), "# B")
-    const dirs = new Map<string, DirEntry>([[dir, { path: dir, persist: true }]])
-    expect(collectAgentContext(dirs).length).toBe(2)
-  })
-
-  test("collects from multiple dirs", () => {
-    const d1 = join(TMP, "ctx-d1")
-    const d2 = join(TMP, "ctx-d2")
-    mkdirSync(d1, { recursive: true })
-    mkdirSync(d2, { recursive: true })
-    writeFileSync(join(d1, "AGENTS.md"), "# D1")
-    writeFileSync(join(d2, "AGENTS.md"), "# D2")
-    const dirs = new Map<string, DirEntry>([
-      [d1, { path: d1, persist: true }],
-      [d2, { path: d2, persist: true }],
-    ])
-    expect(collectAgentContext(dirs).length).toBe(2)
-  })
-
-  test("skips empty files", () => {
-    const dir = join(TMP, "ctx-empty")
-    mkdirSync(dir, { recursive: true })
-    writeFileSync(join(dir, "AGENTS.md"), "   ")
-    const dirs = new Map<string, DirEntry>([[dir, { path: dir, persist: true }]])
-    expect(collectAgentContext(dirs).length).toBe(0)
-  })
-
-  test("returns empty for dirs without context files", () => {
+  test("includes directory list as first section", () => {
     const dirs = new Map<string, DirEntry>([[EXTERNAL, { path: EXTERNAL, persist: true }]])
-    expect(collectAgentContext(dirs).length).toBe(0)
+    const result = collectAgentContext(dirs)
+    expect(result[0]).toContain(EXTERNAL)
+    expect(result[0]).toContain("working directories")
+  })
+
+  test("skips context files when env var is not set", () => {
+    const dir = join(TMP, "ctx-skip")
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, "AGENTS.md"), "# Rules")
+    const dirs = new Map<string, DirEntry>([[dir, { path: dir, persist: true }]])
+    const result = collectAgentContext(dirs)
+    expect(result.length).toBe(1)
+    expect(result[0]).not.toContain("Rules")
+  })
+
+  describe("with OPENCODE_ADDDIR_INJECT_CONTEXT=1", () => {
+    beforeEach(() => { process.env["OPENCODE_ADDDIR_INJECT_CONTEXT"] = "1" })
+    afterEach(() => { delete process.env["OPENCODE_ADDDIR_INJECT_CONTEXT"] })
+
+    test("collects AGENTS.md after directory list", () => {
+      const dir = join(TMP, "ctx-agents")
+      mkdirSync(dir, { recursive: true })
+      writeFileSync(join(dir, "AGENTS.md"), "# Agent rules")
+      const dirs = new Map<string, DirEntry>([[dir, { path: dir, persist: true }]])
+      const result = collectAgentContext(dirs)
+      expect(result.length).toBe(2)
+      expect(result[1]).toContain("Agent rules")
+      expect(result[1]).toContain("Context from")
+    })
+
+    test("collects CLAUDE.md", () => {
+      const dir = join(TMP, "ctx-claude")
+      mkdirSync(dir, { recursive: true })
+      writeFileSync(join(dir, "CLAUDE.md"), "# Claude rules")
+      const dirs = new Map<string, DirEntry>([[dir, { path: dir, persist: true }]])
+      expect(collectAgentContext(dirs).some((s) => s.includes("Claude rules"))).toBe(true)
+    })
+
+    test("collects .agents/AGENTS.md", () => {
+      const dir = join(TMP, "ctx-dotagents")
+      mkdirSync(join(dir, ".agents"), { recursive: true })
+      writeFileSync(join(dir, ".agents", "AGENTS.md"), "# Nested rules")
+      const dirs = new Map<string, DirEntry>([[dir, { path: dir, persist: true }]])
+      expect(collectAgentContext(dirs).some((s) => s.includes("Nested rules"))).toBe(true)
+    })
+
+    test("collects multiple context files from same dir", () => {
+      const dir = join(TMP, "ctx-multi")
+      mkdirSync(dir, { recursive: true })
+      writeFileSync(join(dir, "AGENTS.md"), "# A")
+      writeFileSync(join(dir, "CLAUDE.md"), "# B")
+      const dirs = new Map<string, DirEntry>([[dir, { path: dir, persist: true }]])
+      expect(collectAgentContext(dirs).length).toBe(3)
+    })
+
+    test("collects from multiple dirs", () => {
+      const d1 = join(TMP, "ctx-d1")
+      const d2 = join(TMP, "ctx-d2")
+      mkdirSync(d1, { recursive: true })
+      mkdirSync(d2, { recursive: true })
+      writeFileSync(join(d1, "AGENTS.md"), "# D1")
+      writeFileSync(join(d2, "AGENTS.md"), "# D2")
+      const dirs = new Map<string, DirEntry>([
+        [d1, { path: d1, persist: true }],
+        [d2, { path: d2, persist: true }],
+      ])
+      expect(collectAgentContext(dirs).length).toBe(3)
+    })
+
+    test("skips empty context files", () => {
+      const dir = join(TMP, "ctx-empty")
+      mkdirSync(dir, { recursive: true })
+      writeFileSync(join(dir, "AGENTS.md"), "   ")
+      const dirs = new Map<string, DirEntry>([[dir, { path: dir, persist: true }]])
+      expect(collectAgentContext(dirs).length).toBe(1)
+    })
+  })
+
+  test("returns only directory list when no context files exist", () => {
+    const dirs = new Map<string, DirEntry>([[EXTERNAL, { path: EXTERNAL, persist: true }]])
+    expect(collectAgentContext(dirs).length).toBe(1)
   })
 
   test("returns empty for empty dirs map", () => {
@@ -391,6 +432,16 @@ describe("tool.execute.before hook", () => {
     await hooks["tool.execute.before"]!({ tool: "webfetch", sessionID: "sub-4", callID: "c1" }, { args: { filePath: join(EXTERNAL, "x") } })
     expect(client.calls.filter((c) => c.method === "prompt").length).toBe(0)
   })
+
+  test("grants permission for session-only dirs", async () => {
+    const { hooks, client } = await createPlugin()
+    sessionDir(EXTERNAL)
+    await hooks["tool.execute.before"]!(
+      { tool: "read", sessionID: "sub-5", callID: "c1" },
+      { args: { filePath: join(EXTERNAL, "f.ts") } },
+    )
+    expect(findPromptCall(client.calls, "prompt", (a) => a.path.id === "sub-5")).toBeDefined()
+  })
 })
 
 describe("event auto-approve hook", () => {
@@ -458,7 +509,17 @@ describe("event auto-approve hook", () => {
 })
 
 describe("system.transform hook", () => {
-  test("injects AGENTS.md content from added dirs", async () => {
+  test("injects directory list into system prompt", async () => {
+    const { hooks } = await createPlugin()
+    persistDir(EXTERNAL)
+    const input = { model: {} } as SystemTransformInput
+    const output: SystemTransformOutput = { system: [] }
+    await hooks["experimental.chat.system.transform"]!(input, output)
+    expect(output.system[0]).toContain(EXTERNAL)
+    expect(output.system[0]).toContain("working directories")
+  })
+
+  test("does not inject context files by default", async () => {
     const dir = join(TMP, "agents")
     mkdirSync(dir, { recursive: true })
     writeFileSync(join(dir, "AGENTS.md"), "# Rules")
@@ -467,25 +528,22 @@ describe("system.transform hook", () => {
     const input = { model: {} } as SystemTransformInput
     const output: SystemTransformOutput = { system: [] }
     await hooks["experimental.chat.system.transform"]!(input, output)
-    expect(output.system[0]).toContain("Rules")
-    expect(output.system[0]).toContain("Context from")
+    expect(output.system.length).toBe(1)
+    expect(output.system[0]).not.toContain("Rules")
   })
 
-  test("injects CLAUDE.md content", async () => {
-    const dir = join(TMP, "claude")
-    mkdirSync(dir, { recursive: true })
-    writeFileSync(join(dir, "CLAUDE.md"), "# Claude rules")
+  test("returns only directory list when no context files exist", async () => {
     const { hooks } = await createPlugin()
-    persistDir(dir)
+    persistDir(EXTERNAL)
     const input = { model: {} } as SystemTransformInput
     const output: SystemTransformOutput = { system: [] }
     await hooks["experimental.chat.system.transform"]!(input, output)
-    expect(output.system[0]).toContain("Claude rules")
+    expect(output.system.length).toBe(1)
+    expect(output.system[0]).toContain(EXTERNAL)
   })
 
-  test("skips when no context files exist", async () => {
+  test("returns empty when no dirs", async () => {
     const { hooks } = await createPlugin()
-    persistDir(EXTERNAL)
     const input = { model: {} } as SystemTransformInput
     const output: SystemTransformOutput = { system: [] }
     await hooks["experimental.chat.system.transform"]!(input, output)

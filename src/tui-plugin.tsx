@@ -5,16 +5,21 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync, statSync } from "fs
 import { join, resolve } from "path"
 
 const ID = "opencode-add-dir"
-const DIRS_FILE = () => join(process.env["XDG_DATA_HOME"] || join(process.env["HOME"] || "~", ".local", "share"), "opencode", "add-dir", "directories.json")
+const STATE_DIR = join(process.env["XDG_DATA_HOME"] || join(process.env["HOME"] || "~", ".local", "share"), "opencode", "add-dir")
+const PERSISTED_FILE = join(STATE_DIR, "directories.json")
+const SESSION_FILE = join(STATE_DIR, "session-dirs.json")
 
-function readDirs(): string[] {
-  try { return JSON.parse(readFileSync(DIRS_FILE(), "utf-8")) } catch { return [] }
+function readJsonArray(file: string): string[] {
+  try { return JSON.parse(readFileSync(file, "utf-8")) } catch { return [] }
 }
 
-function writeDirs(dirs: string[]) {
-  const dir = join(DIRS_FILE(), "..")
-  if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
-  writeFileSync(DIRS_FILE(), JSON.stringify(dirs, null, 2))
+function writeJsonArray(file: string, items: string[]) {
+  if (!existsSync(STATE_DIR)) mkdirSync(STATE_DIR, { recursive: true })
+  writeFileSync(file, JSON.stringify(items, null, 2))
+}
+
+function allDirs(): string[] {
+  return [...new Set([...readJsonArray(PERSISTED_FILE), ...readJsonArray(SESSION_FILE)])]
 }
 
 function resolvePath(input: string) {
@@ -23,39 +28,38 @@ function resolvePath(input: string) {
 }
 
 function validate(input: string): string | undefined {
-  if (!input.trim()) return "No directory path provided."
+  if (!input.trim()) return "Path is required."
   const abs = resolvePath(input)
-  try { if (!statSync(abs).isDirectory()) return `${abs} is not a directory.` }
-  catch { return `Path ${abs} was not found.` }
-  if (readDirs().includes(abs)) return `${abs} is already added.`
+  try { if (!statSync(abs).isDirectory()) return `Not a directory: ${abs}` }
+  catch { return `Not found: ${abs}` }
+  if (allDirs().includes(abs)) return `Already added: ${abs}`
 }
 
-function sessionID(api: TuiPluginApi): string | undefined {
+function addDir(abs: string, persist: boolean) {
+  const file = persist ? PERSISTED_FILE : SESSION_FILE
+  const dirs = readJsonArray(file)
+  if (!dirs.includes(abs)) writeJsonArray(file, [...dirs, abs])
+}
+
+function removeDir(path: string) {
+  for (const file of [PERSISTED_FILE, SESSION_FILE]) {
+    const dirs = readJsonArray(file)
+    if (dirs.includes(path)) writeJsonArray(file, dirs.filter((d) => d !== path))
+  }
+}
+
+function getSessionID(api: TuiPluginApi): string | undefined {
   const r = api.route.current
   return r.name === "session" && r.params ? r.params.sessionID as string : undefined
 }
 
-async function withSession(api: TuiPluginApi): Promise<string | undefined> {
-  const id = sessionID(api)
+async function ensureSession(api: TuiPluginApi): Promise<string | undefined> {
+  const id = getSessionID(api)
   if (id) return id
   const res = await api.client.session.create({})
   if (res.error) return
   api.route.navigate("session", { sessionID: res.data.id })
   return res.data.id
-}
-
-type PromptAsyncFn = (params: {
-  sessionID: string
-  parts: { type: "text"; text: string }[]
-  noReply: boolean
-  tools: Record<string, boolean>
-}) => Promise<unknown>
-
-async function grant(api: TuiPluginApi, sid: string, msg: string) {
-  const promptAsync = (api.client.session as unknown as { promptAsync: PromptAsyncFn }).promptAsync
-  await promptAsync({
-    sessionID: sid, parts: [{ type: "text", text: msg }], noReply: true, tools: { external_directory: true },
-  }).catch(() => {})
 }
 
 function AddDirDialog(props: { api: TuiPluginApi }) {
@@ -65,7 +69,8 @@ function AddDirDialog(props: { api: TuiPluginApi }) {
 
   useKeyboard((e) => {
     if (e.name !== "tab" || busy()) return
-    e.preventDefault(); e.stopPropagation()
+    e.preventDefault()
+    e.stopPropagation()
     setRemember((v) => !v)
   })
 
@@ -74,44 +79,56 @@ function AddDirDialog(props: { api: TuiPluginApi }) {
       title="Add directory"
       placeholder="/path/to/directory"
       busy={busy()}
-      busyText="Adding directory..."
+      busyText="Adding..."
       description={() => (
         <box gap={1}>
           <box gap={0}>
-            <text fg={api.theme.current.textMuted}>To get the full path of a project:</text>
-            <text fg={api.theme.current.textMuted}> 1. Move to the project in your terminal</text>
-            <text fg={api.theme.current.textMuted}> 2. Run "pwd" and copy the output</text>
+            <text fg={api.theme.current.textMuted}>How to get the full path:</text>
+            <text fg={api.theme.current.textMuted}> 1. cd to the project in your terminal</text>
+            <text fg={api.theme.current.textMuted}> 2. Run "pwd", copy the output</text>
             <text fg={api.theme.current.textMuted}> 3. Paste below</text>
           </box>
           <box flexDirection="row" gap={1}>
             <text fg={remember() ? api.theme.current.text : api.theme.current.textMuted}>
               {remember() ? "[x]" : "[ ]"} Remember across sessions
             </text>
-            <text fg={api.theme.current.textMuted}>(tab toggle)</text>
+            <text fg={api.theme.current.textMuted}>(tab)</text>
           </box>
         </box>
       )}
       onConfirm={async (value) => {
+        if (busy()) return
         const err = validate(value)
         if (err) return api.ui.toast({ variant: "error", message: err })
 
+        const abs = resolvePath(value)
+        const persist = remember()
+
         setBusy(true)
-        try {
-          const sid = await withSession(api)
-          if (!sid) return api.ui.toast({ variant: "error", message: "Failed to create session" })
-          const abs = resolvePath(value)
-          if (remember()) { const d = readDirs(); if (!d.includes(abs)) writeDirs([...d, abs]) }
-          await grant(api, sid, `Added ${abs} as a working directory (${remember() ? "persistent" : "session"}).`)
-          api.ui.dialog.clear()
-        } finally { setBusy(false) }
+        const sid = await ensureSession(api)
+        if (!sid) {
+          setBusy(false)
+          return api.ui.toast({ variant: "error", message: "Failed to create session" })
+        }
+
+        addDir(abs, persist)
+        api.ui.dialog.clear()
+
+        const label = persist ? "persistent" : "session"
+        api.client.session.prompt({
+          sessionID: sid,
+          parts: [{ type: "text", text: `Added ${abs} as a working directory (${label}).`, ignored: true }],
+          noReply: true,
+          tools: { external_directory: true },
+        }).catch(() => {})
       }}
       onCancel={() => api.ui.dialog.clear()}
     />
   )
 }
 
-function listDirs(api: TuiPluginApi) {
-  const dirs = readDirs()
+function showListDirs(api: TuiPluginApi) {
+  const dirs = allDirs()
   if (!dirs.length) return api.ui.toast({ variant: "info", message: "No directories added." })
   api.ui.dialog.replace(() => (
     <api.ui.DialogAlert
@@ -122,8 +139,8 @@ function listDirs(api: TuiPluginApi) {
   ))
 }
 
-function removeDir(api: TuiPluginApi) {
-  const dirs = readDirs()
+function showRemoveDir(api: TuiPluginApi) {
+  const dirs = allDirs()
   if (!dirs.length) return api.ui.toast({ variant: "info", message: "No directories to remove." })
   api.ui.dialog.replace(() => (
     <api.ui.DialogSelect
@@ -135,11 +152,11 @@ function removeDir(api: TuiPluginApi) {
             title="Remove directory"
             message={`Remove ${opt.value}?`}
             onConfirm={() => {
-              writeDirs(readDirs().filter((d) => d !== opt.value))
-              api.ui.toast({ variant: "success", message: `Removed ${opt.value}` })
+              removeDir(opt.value as string)
               api.ui.dialog.clear()
+              api.ui.toast({ variant: "success", message: `Removed ${opt.value}` })
             }}
-            onCancel={() => removeDir(api)}
+            onCancel={() => showRemoveDir(api)}
           />
         ))
       }}
@@ -150,8 +167,8 @@ function removeDir(api: TuiPluginApi) {
 const tui: TuiPlugin = async (api) => {
   api.command.register(() => [
     { title: "Add directory", value: "add-dir", description: "Add a working directory", category: "Directories", slash: { name: "add-dir" }, onSelect: () => api.ui.dialog.replace(() => <AddDirDialog api={api} />) },
-    { title: "List directories", value: "list-dir", description: "Show working directories", category: "Directories", slash: { name: "list-dir" }, onSelect: () => listDirs(api) },
-    { title: "Remove directory", value: "remove-dir", description: "Remove a working directory", category: "Directories", slash: { name: "remove-dir" }, onSelect: () => removeDir(api) },
+    { title: "List directories", value: "list-dir", description: "Show working directories", category: "Directories", slash: { name: "list-dir" }, onSelect: () => showListDirs(api) },
+    { title: "Remove directory", value: "remove-dir", description: "Remove a working directory", category: "Directories", slash: { name: "remove-dir" }, onSelect: () => showRemoveDir(api) },
   ])
 }
 

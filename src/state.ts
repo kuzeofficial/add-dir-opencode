@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync, statSync } from "fs"
+import { existsSync, mkdirSync, readFileSync, writeFileSync, statSync, unlinkSync } from "fs"
 import { join } from "path"
 
 function stateDir() {
@@ -9,7 +9,8 @@ function stateDir() {
   )
 }
 
-const dirsFile = () => join(stateDir(), "directories.json")
+function persistedFile() { return join(stateDir(), "directories.json") }
+function sessionFile() { return join(stateDir(), "session-dirs.json") }
 
 export interface DirEntry {
   path: string
@@ -20,37 +21,40 @@ export function expandHome(p: string) {
   return p.startsWith("~/") ? (process.env["HOME"] || "~") + p.slice(1) : p
 }
 
+function readJsonArray(file: string): string[] {
+  try { return JSON.parse(readFileSync(file, "utf-8")) } catch { return [] }
+}
+
 function loadDirs(): Map<string, DirEntry> {
   const dirs = new Map<string, DirEntry>()
-  const file = dirsFile()
-  if (!existsSync(file)) return dirs
-  try {
-    for (const p of JSON.parse(readFileSync(file, "utf-8")) as string[])
-      dirs.set(p, { path: p, persist: true })
-  } catch {}
+  for (const p of readJsonArray(persistedFile())) dirs.set(p, { path: p, persist: true })
+  for (const p of readJsonArray(sessionFile())) if (!dirs.has(p)) dirs.set(p, { path: p, persist: false })
   return dirs
 }
 
 let cachedDirs: Map<string, DirEntry> | undefined
 let cachedMtime = 0
+let lastCheckMs = 0
+const CACHE_TTL_MS = 500
 
 export function freshDirs(): Map<string, DirEntry> {
-  const file = dirsFile()
-  try {
-    const mtime = statSync(file).mtimeMs
-    if (cachedDirs && mtime === cachedMtime) return cachedDirs
-    cachedMtime = mtime
-    cachedDirs = loadDirs()
-    return cachedDirs
-  } catch {
-    if (!cachedDirs) cachedDirs = new Map()
-    return cachedDirs
-  }
+  const now = Date.now()
+  if (cachedDirs && now - lastCheckMs < CACHE_TTL_MS) return cachedDirs
+
+  lastCheckMs = now
+  let mtime = 0
+  try { mtime += statSync(persistedFile()).mtimeMs } catch {}
+  try { mtime += statSync(sessionFile()).mtimeMs } catch {}
+  if (cachedDirs && mtime === cachedMtime) return cachedDirs
+  cachedMtime = mtime
+  cachedDirs = loadDirs()
+  return cachedDirs
 }
 
 export function invalidateCache() {
   cachedDirs = undefined
   cachedMtime = 0
+  lastCheckMs = 0
 }
 
 export function isChildOf(parent: string, child: string) {
@@ -65,6 +69,10 @@ export function matchesDirs(dirs: Map<string, DirEntry>, filepath: string) {
 }
 
 const PKG = "opencode-add-dir"
+const CONFIG_DIR = join(
+  process.env["XDG_CONFIG_HOME"] || join(process.env["HOME"] || "~", ".config"),
+  "opencode",
+)
 
 function stripJsonComments(text: string): string {
   let result = ""
@@ -83,26 +91,18 @@ function stripJsonComments(text: string): string {
   return result
 }
 
-function configDir() {
-  return join(
-    process.env["XDG_CONFIG_HOME"] || join(process.env["HOME"] || "~", ".config"),
-    "opencode",
-  )
-}
-
 function findTuiConfig(): string {
-  const dir = configDir()
   for (const name of ["tui.jsonc", "tui.json"]) {
-    const p = join(dir, name)
+    const p = join(CONFIG_DIR, name)
     if (existsSync(p)) return p
   }
-  return join(dir, "tui.json")
+  return join(CONFIG_DIR, "tui.json")
 }
 
 export function ensureTuiConfig() {
+  try { unlinkSync(sessionFile()) } catch {}
   try {
-    const dir = configDir()
-    if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
+    if (!existsSync(CONFIG_DIR)) mkdirSync(CONFIG_DIR, { recursive: true })
 
     const filePath = findTuiConfig()
     let config: Record<string, unknown> = {}

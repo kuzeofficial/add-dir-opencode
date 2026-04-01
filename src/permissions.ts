@@ -1,20 +1,24 @@
-import { join, resolve } from "path"
+import { resolve } from "path"
 import type { DirEntry } from "./state.js"
 import { matchesDirs, expandHome } from "./state.js"
-import type { SDK, PromptBody, PermissionEvent, ToolArgs } from "./types.js"
+import type { SDK, PermissionEvent, ToolArgs } from "./types.js"
 
 const FILE_TOOLS = new Set(["read", "write", "edit", "apply_patch", "multiedit", "glob", "grep", "list", "bash"])
 const grantedSessions = new Set<string>()
 
+export function resetGrantedSessions() { grantedSessions.clear() }
+
 export function permissionGlob(dirPath: string) {
-  return join(dirPath, "*")
+  return dirPath + "/*"
 }
 
-export async function grantSession(sdk: SDK, sessionID: string, text: string) {
+export async function grantSession(sdk: SDK, sessionID: string) {
   if (grantedSessions.has(sessionID)) return
   grantedSessions.add(sessionID)
-  const body: PromptBody = { noReply: true, tools: { external_directory: true }, parts: [{ type: "text", text }] }
-  await (sdk.session.prompt as Function)({ path: { id: sessionID }, body }).catch(() => {})
+  await (sdk.session.prompt as Function)({
+    path: { id: sessionID },
+    body: { noReply: true, tools: { external_directory: true }, parts: [] },
+  }).catch(() => {})
 }
 
 export function shouldGrantBeforeTool(dirs: Map<string, DirEntry>, tool: string, args: ToolArgs): boolean {
@@ -26,9 +30,7 @@ export function shouldGrantBeforeTool(dirs: Map<string, DirEntry>, tool: string,
 export async function autoApprovePermission(sdk: SDK, props: PermissionEvent, dirs: Map<string, DirEntry>) {
   if (props.permission !== "external_directory") return
 
-  const meta = props.metadata
-  const filepath = (meta.filepath as string) ?? ""
-  const parentDir = (meta.parentDir as string) ?? ""
+  const { filepath = "", parentDir = "" } = props.metadata as { filepath?: string; parentDir?: string }
   const patterns = props.patterns ?? []
 
   const matches =

@@ -27,17 +27,15 @@
   },
   "files": [
     "dist/",
-    "bin/ensure-tui.mjs",
     "bin/setup.mjs",
     "README.md",
     "LICENSE"
   ],
   "scripts": {
-    "build": "bun run build:server && bun run build:tui && bun x tsc --emitDeclarationOnly",
-    "build:server": "bun build ./src/index.ts --outdir ./dist --target node --format esm --external @opencode-ai/plugin",
+    "build": "rm -rf dist && bun run build:server && bun run build:tui && bun x tsc --emitDeclarationOnly",
+    "build:server": "bun build ./src/index.ts --outdir ./dist --target node --format esm --external @opencode-ai/plugin --minify",
     "build:tui": "cp ./src/tui-plugin.tsx ./dist/tui.tsx",
-    "postinstall": "node ./bin/ensure-tui.mjs",
-    "deploy": "bun run build:server && bun run build:tui",
+    "deploy": "rm -rf dist && bun run build:server && bun run build:tui",
     "test": "bun test",
     "typecheck": "bun x tsc --noEmit",
     "prepublishOnly": "bun run typecheck && bun test && bun run build"

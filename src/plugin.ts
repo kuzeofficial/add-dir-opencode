@@ -22,7 +22,7 @@ export const AddDirPlugin: Plugin = async ({ client }) => {
     "tool.execute.before": async (input, output) => {
       const dirs = freshDirs()
       if (shouldGrantBeforeTool(dirs, input.tool, output.args as ToolArgs))
-        await grantSession(sdk, input.sessionID, "Directory access granted by add-dir plugin.")
+        await grantSession(sdk, input.sessionID)
     },
 
     event: async ({ event }) => {
