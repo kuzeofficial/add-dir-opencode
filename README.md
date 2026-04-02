@@ -1,4 +1,4 @@
-# opencode-add-dir
+# /add-dir for OpenCode
 
 Add working directories to your [OpenCode](https://opencode.ai) session — inspired by Claude Code's [`/add-dir`](https://docs.anthropic.com/en/docs/claude-code/cli-usage#add-dir) command.
 
