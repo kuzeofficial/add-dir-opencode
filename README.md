@@ -3,6 +3,7 @@
 Add working directories to your [OpenCode](https://opencode.ai) session — inspired by Claude Code's [`/add-dir`](https://docs.anthropic.com/en/docs/claude-code/cli-usage#add-dir) command.
 
 When you need an agent to read, edit, or search files outside the current project, this plugin grants access without permission popups.
+![add_dir_2](https://github.com/user-attachments/assets/9b048406-0ab0-4510-a424-f5e83923db70)
 
 ## Quick Start
 
